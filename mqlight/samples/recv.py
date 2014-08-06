@@ -9,7 +9,7 @@ port = 5672
 parser = argparse.ArgumentParser(description='Connect to an MQLight broker and subscribe to the specified topic.')
 parser.add_argument('topic', type=str, nargs='?', default='public', help='topic')
 parser.add_argument('-a', '--address', dest='address', type=str, default='amqp://' + hostname + ':' + str(port), help='address of the MQLight broker (default: amqp://' + hostname + ':' + str(port) + ')')
-parser.add_argument('-m', '--max', dest='maxmsg', type=int, default=10, help='maximum number of messages to receive (default: 10)')
+parser.add_argument('-m', '--max', dest='maxmsg', type=int, default=10, help='maximum number of message to receive (default: 10)')
 parser.add_argument('-t', '--timeout', dest='timeout', type=int, default=60, help='maximum number of seconds to wait for messages (default: 60)')
 args = parser.parse_args()
 
@@ -27,39 +27,36 @@ if timeout < 0:
     print 'The timeout must be a positive number'
     quit()
 
-def subscribe(value):
+def subscribe(err):
+    if err:
+        print 'error while subscribing ', err
     print 'Connected to ' + address + ' using client-id ' + client.get_id()
     print 'Subscribing to: ' + topic
-    client.on(MESSAGE, message)
+    client.add_listener(MESSAGE, message)
     client.subscribe(topic, subscribed)
     t = threading.Timer(timeout, timedout)
     t.start()
 
 def timedout():
     print 'Timeout reached, disconnecting'
-    client.disconnect()
+    client.stop()
 
-def subscribed(err, pattern):
+def subscribed(err, pattern, share):
     if err is not None:
-        print 'error subscribing'
+        print 'error subscribing ', err
     else:
         print 'subscribed to ' + pattern
 
-def message(args):
+def message(data, delivery):
     global count
-    count = count + 1
+    count += 1
     print '# received message ' + str(count)
-    print str(args[0])
-    print str(args[1])
+    print 'data ' , data
+    print 'delivery ', delivery
     if count == maxmsg:
         print 'Received the maximum number of messages, disconnecting ...'
-        client.disconnect()
+        client.stop()
 
-def callback_connect(err):
-    if err:
-        print 'error connecting ' + str(err)
-    return
 
-client = create_client('amqp://localhost:5672', id)
-client.on(CONNECTED, subscribe)
-client.connect(callback_connect)
+client = Client(address, id)
+client.add_listener(STARTED, subscribe)

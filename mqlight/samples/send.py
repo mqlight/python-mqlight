@@ -2,7 +2,7 @@ import argparse
 import time
 from mqlight import *
 
-id = 'send2.py'
+id = 'send.py'
 hostname = 'localhost'
 port = 5672
 
@@ -17,16 +17,17 @@ messages = args.messages
 delay = args.delay
 topic = args.topic
 address = args.address
+count = 0
 
 def send_messages(value):
     print 'Connected to ' + address + ' using client-id ' + client.get_id()
     print 'Publishing to: ' + topic
     for msg in messages:
-        client.send(topic, msg, send_callback)
-        time.sleep(delay)
-    client.disconnect()
-   
-def send_callback(err, topic, data, options):
+        client.send(topic=topic, data=msg, callback=sent)
+
+def sent(err, topic, data, options):
+    global count
+    count += 1 
     if err:
         'Problem with send request: ', err.message
         quit()
@@ -34,13 +35,10 @@ def send_callback(err, topic, data, options):
         if data:
             print '# sent message:'
             print data
-    return
+            print topic
+            print options
+    if count == len(messages):
+        client.stop()
 
-def callback_connect(err):
-    if err:
-        print 'error connecting ' + str(err)
-    return
-
-client = create_client(address, id)
-client.on(CONNECTED, send_messages) 
-client.connect(callback_connect)
+client = Client(address, id)
+client.add_listener(STARTED, send_messages)
