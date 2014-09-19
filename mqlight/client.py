@@ -26,9 +26,9 @@ import socket
 from mqlightlog import get_logger, NO_CLIENT_ID
 from json import loads
 from random import random
-from urlparse import urlparse, unquote
+from urlparse import urlparse
 from urllib import quote
-import mqlightexceptions as mqlex
+import mqlightexceptions as mqlexc
 
 CMD = sys.argv[0].split(' ')
 if 'unittest' in CMD:
@@ -41,53 +41,96 @@ else:
 # variable. The default is 'ffdc'.
 LOG = get_logger(__name__)
 
-# Allowed chars for the client id
-VALID_CLIENT_ID_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw' + \
-    'xyz0123456789%/._'
+# Regex for the client id
+INVALID_CLIENT_ID_REGEX = r'[^A-Za-z0-9%/\._]'
 
 # The connection retry interval in seconds
 CONNECT_RETRY_INTERVAL = 10
 
-STARTED = 'STARTED'
-STARTING = 'STARTING'
-STOPPED = 'STOPPED'
-STOPPING = 'STOPPING'
-RESTARTED = 'RESTARTED'
-RETRYING = 'RETRYING'
-ERROR = 'ERROR'
-MESSAGE = 'MESSAGE'
-MALFORMED = 'MALFORMED'
-DRAIN = 'DRAIN'
+STARTED = 'started'
+STARTING = 'starting'
+STOPPED = 'stopped'
+STOPPING = 'stopping'
+RESTARTED = 'restarted'
+RETRYING = 'retrying'
+REPLACED = 'replaced'
+ERROR = 'error'
+MESSAGE = 'message'
+MALFORMED = 'malformed'
+DRAIN = 'drain'
 
 QOS_AT_MOST_ONCE = 0
 QOS_AT_LEAST_ONCE = 1
 
-STATES = {
-    'STARTED': STARTED,
-    'STARTING': STARTING,
-    'STOPPED': STOPPED,
-    'STOPPING': STOPPING,
-    'RETRYING': RETRYING
-}
+STATES = (
+    STARTED,
+    STARTING,
+    STOPPED,
+    STOPPING,
+    RETRYING,
+    REPLACED
+)
 
-QOS = {
-    'QOS_AT_MOST_ONCE': QOS_AT_MOST_ONCE,
-    'QOS_AT_LEAST_ONCE': QOS_AT_LEAST_ONCE
-}
+QOS = (
+    QOS_AT_MOST_ONCE,
+    QOS_AT_LEAST_ONCE
+)
 
-EVENTS = {
-    'STARTED': STARTED,
-    'STOPPED': STOPPED,
-    'RESTARTED': RESTARTED,
-    'ERROR': ERROR,
-    'MESSAGE': MESSAGE,
-    'MALFORMED': MALFORMED,
-    'DRAIN': DRAIN
-}
+EVENTS = (
+    STARTED,
+    STOPPED,
+    RESTARTED,
+    ERROR,
+    MESSAGE,
+    MALFORMED,
+    DRAIN
+)
 
+
+class ActiveClients(object):
+    """
+    Set of active clients
+    """
+    def __init__(self):
+        self.clients = {}
+
+    def add(self, client):
+        """
+        Add client to set
+        """
+        self.clients[client.get_id()] = client
+
+    def remove(self, client_id):
+        """
+        Remove client from set
+        """
+        self.clients.pop(client_id, None)
+
+    def get(self, client_id):
+        """
+        Get client from set
+        """
+        if self.has(client_id):
+            client = self.clients[client_id]
+        else:
+            client = None
+        return client
+
+    def has(self, client_id):
+        """
+        Return True if the specified client is in the set
+        """
+        found = client_id in self.clients
+        return found
+
+ACTIVE_CLIENTS = ActiveClients()
 
 def create_client(options, callback=None):
+    """
+    Static Client factory
+    """
     LOG.entry('create_client', NO_CLIENT_ID)
+    LOG.parms(NO_CLIENT_ID, 'options:', options)
     err = None
     if not isinstance(options, dict):
         err = TypeError('options argument must be a dict')
@@ -98,7 +141,7 @@ def create_client(options, callback=None):
         LOG.error('create_client', NO_CLIENT_ID, err)
         raise err
     if 'service' not in options:
-        err = mqlex.InvalidArgumentError('service is required')
+        err = mqlexc.InvalidArgumentError('service is required')
         LOG.error('create_client', NO_CLIENT_ID, err)
         raise err
     if 'id' in options:
@@ -115,8 +158,8 @@ def create_client(options, callback=None):
         client_id,
         security_options,
         callback)
+    LOG.exit('create_client', NO_CLIENT_ID, client)
     return client
-
 
 class SecurityOptions(object):
 
@@ -165,14 +208,17 @@ def _should_reconnect(error):
     Generic helper method to determine if we should automatically reconnect
     for the given type of error.
     """
+    LOG.entry('_should_reconnect', NO_CLIENT_ID)
     err_type = type(error)
-    return err_type not in (
+    result = err_type not in (
         TypeError,
-        mqlex.InvalidArgumentError,
-        mqlex.ReplacedError,
-        mqlex.StoppedError,
-        mqlex.SubscribedError,
-        mqlex.UnsubscribedError)
+        mqlexc.InvalidArgumentError,
+        mqlexc.ReplacedError,
+        mqlexc.StoppedError,
+        mqlexc.SubscribedError,
+        mqlexc.UnsubscribedError)
+    LOG.exit('_should_reconnect', NO_CLIENT_ID, result)
+    return result
 
 
 def _get_http_service_function(service_url):
@@ -209,13 +255,13 @@ def _get_http_service_function(service_url):
                     LOG.error('_http_service_function', NO_CLIENT_ID, err)
                     callback(err)
             else:
-                err = mqlex.NetworkError(
+                err = mqlexc.NetworkError(
                     'http request to ' + service_url + ' failed with a ' +
                     'status code of ' + str(res.status))
                 LOG.error('_http_service_function', NO_CLIENT_ID, err)
                 callback(err, None)
         except (httplib.HTTPException, socket.error) as exc:
-            err = mqlex.NetworkError(
+            err = mqlexc.NetworkError(
                 'http request to ' + service_url + ' failed:' + str(exc))
             LOG.error('_http_service_function', NO_CLIENT_ID, err)
             callback(err, None)
@@ -234,6 +280,7 @@ def _get_file_service_function(file_url):
     return an array of service URLs.
     """
     LOG.entry('_get_file_service_function', NO_CLIENT_ID)
+    LOG.parms(NO_CLIENT_ID, 'file_url:', file_url)
     if not isinstance(file_url, str):
         err = TypeError('file_url must be a string')
         LOG.error('_get_file_service_function', NO_CLIENT_ID, err)
@@ -248,16 +295,10 @@ def _get_file_service_function(file_url):
         LOG.entry('_file_service_function', NO_CLIENT_ID)
         LOG.parms(NO_CLIENT_ID, 'callback:', callback)
         opened = False
-        print codecs.open
         with codecs.open(file_path, encoding='utf-8', mode='r') as file_obj:
-            print file_obj
-            print file_obj.read
             try:
                 opened = True
-                r = file_obj.read()
-                print 'json'
-                print r
-                json_obj = loads(r)
+                json_obj = loads(file_obj.read())
                 if 'service' in json_obj:
                     service = json_obj['service']
                 else:
@@ -265,14 +306,14 @@ def _get_file_service_function(file_url):
                 LOG.data(NO_CLIENT_ID, 'service:', service)
                 callback(None, service)
             except Exception as exc:
-                err = mqlex.MQLightError(
+                err = mqlexc.MQLightError(
                     'The content read from ' + file_path + ' contained ' +
                     'unparseable JSON: ' + str(exc))
                 LOG.error('_file_service_function', NO_CLIENT_ID, err)
                 callback(err, None)
         file_obj.close()
         if not opened:
-            err = mqlex.MQLightError(
+            err = mqlexc.MQLightError(
                 'attempt to read ' +
                 file_path +
                 ' failed')
@@ -293,11 +334,12 @@ def _generate_service_list(service, security_options):
     """
     LOG.entry('_generate_service_list', NO_CLIENT_ID)
     LOG.parms(NO_CLIENT_ID, 'service:', service)
+    LOG.parms(NO_CLIENT_ID, 'security_options:', security_options)
 
     # Ensure the service is a list
     input_service_list = []
     if not service:
-        error = TypeError('service is None')
+        error = TypeError('service is undefined')
         LOG.error('_generate_service_list', NO_CLIENT_ID, error)
         raise error
     elif hasattr(service, '__call__'):
@@ -310,6 +352,8 @@ def _generate_service_list(service, security_options):
             LOG.error('_generate_service_list', NO_CLIENT_ID, error)
             raise error
         input_service_list = service
+    elif isinstance(service, unicode):
+        input_service_list = [str(service)]
     elif isinstance(service, str):
         input_service_list = [service]
     else:
@@ -334,7 +378,7 @@ def _generate_service_list(service, security_options):
                 auth_user = service_url.username
                 auth_password = service_url.password
             else:
-                error = mqlex.InvalidArgumentError(
+                error = mqlexc.InvalidArgumentError(
                     'URLs supplied via the service property must ' +
                     'specify both a user name and a password value, ' +
                     'or omit both values')
@@ -342,7 +386,7 @@ def _generate_service_list(service, security_options):
                 raise error
 
             if security_options.property_user != auth_user:
-                error = mqlex.InvalidArgumentError(
+                error = mqlexc.InvalidArgumentError(
                     'User name supplied as user property ' +
                     'security_options.user  does not match ' +
                     'username supplied via a URL passed via the ' +
@@ -350,7 +394,7 @@ def _generate_service_list(service, security_options):
                 LOG.error('_generate_service_list', NO_CLIENT_ID, error)
                 raise error
             if security_options.property_password != auth_password:
-                error = mqlex.InvalidArgumentError(
+                error = mqlexc.InvalidArgumentError(
                     'Password name supplied as password property ' +
                     'security_options.password  does not match ' +
                     'password supplied via a URL passed via the ' +
@@ -366,13 +410,13 @@ def _generate_service_list(service, security_options):
         #  by the first pass through the loop.
         if i > 0:
             if security_options.url_user != auth_user:
-                error = mqlex.InvalidArgumentError(
+                error = mqlexc.InvalidArgumentError(
                     'URLs supplied via the service property contain ' +
                     'inconsistent user names')
                 LOG.error('_generateServiceList', NO_CLIENT_ID, error)
                 raise error
             elif security_options.url_password != auth_password:
-                error = mqlex.InvalidArgumentError(
+                error = mqlexc.InvalidArgumentError(
                     'URLs supplied via the service property contain ' +
                     'inconsistent password values')
                 LOG.error('_generateServiceList', NO_CLIENT_ID, error)
@@ -380,7 +424,7 @@ def _generate_service_list(service, security_options):
 
         # Check we are trying to use the amqp protocol
         if protocol not in ('amqp', 'amqps'):
-            error = mqlex.InvalidArgumentError(
+            error = mqlexc.InvalidArgumentError(
                 'Unsupported URL ' + input_service_list[i] +
                 ' specified for service. ' +
                 'Only the amqp or amqps protocol are supported.' +
@@ -390,54 +434,44 @@ def _generate_service_list(service, security_options):
 
         # Check we have a hostname
         host = service_url.hostname
-        if host is None:
-            error = mqlex.InvalidArgumentError(
+        if host is None or host == '':
+            error = mqlexc.InvalidArgumentError(
                 'Unsupported URL ' + input_service_list[i] +
                 ' specified for service. Must supply a hostname.')
             LOG.error('_generate_service_list', NO_CLIENT_ID, error)
             raise error
 
         # Set default port if not supplied
-        port = service_url.port
+        port = None
+        if hasattr(service_url, 'port'):
+            port = service_url.port
         if port is None:
             port = 5672 if protocol == 'amqp' else 5671
 
         # Check for no path
         path = service_url.path
         if path and path != '/':
-            error = mqlex.InvalidArgumentError(
+            error = mqlexc.InvalidArgumentError(
                 'Unsupported URL ' + input_service_list[i] +
                 ' paths (' + path + ' ) cannot be part of a service ' +
                 'URL.')
             LOG.error('_generate_service_list', NO_CLIENT_ID, error)
             raise error
 
+        # Check that we can reconstruct the netloc
+        url = host
+        if hasattr(service_url, 'port') and service_url.port is not None:
+            url += ':' + str(service_url.port)
+        if service_url.netloc.lower() != url:
+            error = mqlexc.InvalidArgumentError(
+                'Unsupported URL ' + input_service_list[i] +
+                ' is not valid')
+            LOG.error('_generate_service_list', NO_CLIENT_ID, error)
+            raise error
+
         service_list.append(protocol + '://' + host + ':' + str(port))
     LOG.exit('_generate_service_list', NO_CLIENT_ID, service_list)
     return service_list
-
-
-def _stop_messenger(client, stop_processing_callback, callback=None):
-    LOG.entry('_stop_messenger', client.get_id())
-    stopped = True
-    # If messenger available then request it to stop
-    # (otherwise it must have already been stopped)
-    if client._messenger:
-        stopped = client._messenger.stop()
-
-    # If stopped then perform the required stop processing
-    if stopped:
-        if client._heartbeat_timeout:
-            client._heartbeat_timeout.cancel()
-        stop_processing_callback(client, callback)
-    else:
-        # Otherwise check for the messenger being stopped again
-        timer = threading.Timer(
-            1, _stop_messenger, [
-                client, stop_processing_callback, callback])
-        timer.start()
-    LOG.exit('_stop_messenger', client.get_id(), None)
-
 
 class Client(object):
 
@@ -483,7 +517,7 @@ class Client(object):
         Returns:
             An instance of Client
         Raises:
-            TypeError, mqlex.InvalidArgumentError: if any of the passed
+            TypeError, mqlexc.InvalidArgumentError: if any of the passed
                 arguments is invalid
         """
         LOG.entry('Client.constructor', NO_CLIENT_ID)
@@ -502,7 +536,7 @@ class Client(object):
                 service_function = _get_http_service_function(service_url)
             elif service_url.scheme == 'file':
                 if service_url.hostname and service_url.hostname != 'localhost':
-                    error = mqlex.InvalidArgumentError(
+                    error = mqlexc.InvalidArgumentError(
                         'service contains unsupported file URI of ' + service +
                         ', only file:///path or file://localhost/path are ' +
                         ' supported.')
@@ -518,7 +552,7 @@ class Client(object):
 
         # If the client id is incorrectly formatted then throw an error
         if len(client_id) > 48:
-            error = mqlex.InvalidArgumentError(
+            error = mqlexc.InvalidArgumentError(
                 'Client identifier ' + client_id +
                 ' is longer than the maximum ID length of 48')
             LOG.error('Client.constructor', NO_CLIENT_ID, error)
@@ -531,22 +565,22 @@ class Client(object):
             raise error
 
         # currently client ids are restricted, reject any invalid ones
-        for i in range(len(client_id)):
-            if client_id[i] not in VALID_CLIENT_ID_CHARS:
-                error = mqlex.InvalidArgumentError(
-                    'Client Identifier ' + client_id +
-                    ' contains invalid char: ' + client_id[i])
-                LOG.error('Client.constructor', NO_CLIENT_ID, error)
-                raise error
+        matches = re.search(INVALID_CLIENT_ID_REGEX, client_id)
+        if matches is not None:
+            error = mqlexc.InvalidArgumentError(
+                'Client Identifier ' + client_id +
+                ' contains invalid char: ' + matches.group(0))
+            LOG.error('Client.constructor', NO_CLIENT_ID, error)
+            raise error
 
         # User/password must either both be present, or both be absent.
         if security_options:
             if isinstance(security_options, dict):
-                security_options = SecurityOptions(security_options)
+                s_o = SecurityOptions(security_options)
                 # User/password must either both be present, or both be absent.
-                if (security_options.property_user and security_options.property_password is None) or (
-                        security_options.property_user is None and security_options.property_password):
-                    error = mqlex.InvalidArgumentError(
+                if (s_o.property_user and s_o.property_password is None) or (
+                        s_o.property_user is None and s_o.property_password):
+                    error = mqlexc.InvalidArgumentError(
                         'both user and password properties must be ' +
                         'specified together')
                     LOG.error('Client.constructor', NO_CLIENT_ID, error)
@@ -557,31 +591,30 @@ class Client(object):
                 raise error
 
             # Validate the ssl security options
-            print security_options.ssl_verify_name
-            if security_options.ssl_verify_name:
-                if security_options.ssl_verify_name not in [True, False]:
-                    error = mqlex.InvalidArgumentError(
+            if s_o.ssl_verify_name:
+                if s_o.ssl_verify_name not in [True, False]:
+                    error = mqlexc.InvalidArgumentError(
                         'ssl_verify_name value ' +
-                        security_options.ssl_verify_name + ' is invalid. ' +
+                        s_o.ssl_verify_name + ' is invalid. ' +
                         'Must evaluate to True of False')
                     LOG.error('Client.constructor', NO_CLIENT_ID, error)
                     raise error
-            if security_options.ssl_trust_certificate:
-                if not isinstance(security_options.ssl_trust_certificate, str):
+            if s_o.ssl_trust_certificate:
+                if not isinstance(s_o.ssl_trust_certificate, str):
                     error = TypeError(
                         'ssl_trust_certificate value ' +
-                        str(security_options.ssl_trust_certificate) +
+                        str(s_o.ssl_trust_certificate) +
                         ' is invalid. Must be a string')
                     LOG.error('Client.constructor', NO_CLIENT_ID, error)
                     raise error
-                if not os.path.isfile(security_options.ssl_trust_certificate):
+                if not os.path.isfile(s_o.ssl_trust_certificate):
                     error = TypeError(
                         'The file specified for ssl_trust_certificate is not ' +
                         'a regular file')
                     LOG.error('Client.constructor', NO_CLIENT_ID, error)
                     raise error
         else:
-            security_options = SecurityOptions({})
+            s_o = SecurityOptions({})
 
         if callback and not hasattr(callback, '__call__'):
             error = TypeError('callback must be a function')
@@ -592,7 +625,7 @@ class Client(object):
         self._service_function = service_function
         self._service_list = None
         self._id = client_id
-        self._security_options = security_options
+        self._security_options = s_o
 
         self._messenger = mqlightproton._MQLightMessenger(self._id)
 
@@ -613,14 +646,17 @@ class Client(object):
 
         # List of queued sends for resending on a reconnect
         self._queued_sends = []
+        # List of callbacks to notify when a send operation completes
+        self._queued_send_callbacks = []
 
-        # AN identifier for the connection
+        # An identifier for the connection
         self._connection_id = 0
 
         # Heartbeat
         self._heartbeat_timeout = None
 
         self._callbacks = {}
+        self._once_callbacks = {}
 
         # No drain event initially required
         self._drain_event_required = False
@@ -633,11 +669,27 @@ class Client(object):
                 service,
                 self._security_options)
 
-        def connect_callback(err):
-            if callback:
-                callback(err, self)
-        self._perform_connect(connect_callback, service, True)
+        # Check that the id for this instance is not already in use. If it is
+        # then we need to replace the previous instance and set its state to
+        # 'replaced'
+        if ACTIVE_CLIENTS.has(self._id):
+            previous_client = ACTIVE_CLIENTS.get(self._id)
+            ACTIVE_CLIENTS.add(self)
+            def stop_callback(err):
+                previous_client._set_state(REPLACED)
+                LOG.data(self._id, 'Previous client instance replaced')
+                def connect_callback(err):
+                    if callback:
+                        callback(err, self)
+                self._perform_connect(connect_callback, service, True)
+            previous_client.stop(stop_callback)
 
+        else:
+            ACTIVE_CLIENTS.add(self)
+            def connect_callback(err):
+                if callback:
+                    callback(err, self)
+            self._perform_connect(connect_callback, service, True)
         LOG.exit('Client.constructor', self._id, None)
 
     def _perform_connect(self, callback, service, new_client):
@@ -645,18 +697,30 @@ class Client(object):
         Performs the connection
         """
         LOG.entry('Client._perform_connect', self._id)
+        LOG.parms(NO_CLIENT_ID, 'callback:', callback)
+        LOG.parms(NO_CLIENT_ID, 'service:', service)
+        LOG.parms(NO_CLIENT_ID, 'new_client:', new_client)
+        if self.state == REPLACED:
+            err = mqlexc.LocalReplacedError()
+            if callback:
+                callback(err)
+            LOG.exit('Client._perform_connect', self._id, None)
+            return None
+
         if not new_client:
-            current_state = self.get_state()
+            current_state = self.state
+            LOG.data(self._id, 'current_state:', current_state)
             # if we are not disconnected or disconnecting return with the client
             # object
-            if current_state is not STOPPED and current_state != RETRYING:
+            if current_state not in (STOPPED, RETRYING):
                 if (current_state == STOPPING):
                     def _still_disconnecting(client, callback):
                         """
                         Waits while the client is disconnecting
                         """
                         LOG.entry('Client._still_disconnecting', client._id)
-                        if client.get_state() == STOPPING:
+                        LOG.parms(NO_CLIENT_ID, 'callback:', callback)
+                        if client.state == STOPPING:
                             _still_disconnecting(client, callback)
                         else:
                             client._perform_connect(client, service, callback)
@@ -678,15 +742,16 @@ class Client(object):
                 LOG.exit('Client._perform_connect', self._id, self)
                 return self
 
-            if self.get_state() == STOPPED:
+            if self.state == STOPPED:
                 self._set_state(STARTING)
 
             # If the messenger is not already stopped then something has gone
             # wrong
             if self._messenger and not self._messenger.stopped:
-                error = mqlex.MQLightError('messenger is not stopped')
-                LOG.error('Client._perform_connect', error)
-                raise error
+                err = mqlexc.MQLightError('messenger is not stopped')
+                LOG.ffdc('Client._perform_connect', 'ffdc001', self._id, err)
+                LOG.error('Client._perform_connect', err)
+                raise err
         else:
             self._set_state(STARTING)
 
@@ -698,12 +763,17 @@ class Client(object):
                     'Client._perform_connect._callback',
                     self._id)
                 if err:
+                    ACTIVE_CLIENTS.remove(self._id)
                     callback(None)
                 else:
-                    self._service_list = _generate_service_list(
+                    try:
+                        self._service_list = _generate_service_list(
                         service,
                         self._security_options)
-                    self._connect_to_service(callback)
+                        self._connect_to_service(callback)
+                    except Exception as exc:
+                        ACTIVE_CLIENTS.remove(self._id)
+                        callback(exc)
                 LOG.exit(
                     'Client._perform_connect._callback',
                     self._id,
@@ -716,11 +786,11 @@ class Client(object):
                     self._security_options)
                 self._connect_to_service(callback)
             except Exception as exc:
+                ACTIVE_CLIENTS.remove(self._id)
                 LOG.error('Client._perform_connect', exc)
                 if callback:
                     callback(exc)
         LOG.exit('Client._perform_connect', self._id, None)
-        return
 
     #def __del__(self):
     #    LOG.entry('Client.destructor', NO_CLIENT_ID)
@@ -733,7 +803,7 @@ class Client(object):
     def __enter__(self):
         LOG.entry('Client.__enter__', self._id)
         self.start()
-        while self.get_state() != STARTED:
+        while self.state != STARTED:
             # Wait for the connection to be established
             pass
         LOG.exit('Client.__enter__', self._id, self)
@@ -808,12 +878,40 @@ class Client(object):
             TypeError: if callback is not a function
         """
         LOG.entry('Client.start', self._id)
+        LOG.parms(NO_CLIENT_ID, 'callback:', callback)
 
         if callback and not hasattr(callback, '__call__'):
             error = TypeError('callback must be a function')
             LOG.error('Client.start', self._id, error)
             raise error
-        self._perform_connect(callback, self._service, False)
+
+        # Check that the id for this instance is not already in use. If it is
+        # then we need to stop the active instance before starting
+        previous_active_client = ACTIVE_CLIENTS.get(self._id)
+        LOG.data(self._id, 'previous_active_client:', previous_active_client)
+        LOG.data(self._id, 'self:', self)
+        if previous_active_client is not None and previous_active_client != self:
+            LOG.debug(
+                self._id,
+                'stopping previously active client with same client id')
+            ACTIVE_CLIENTS.add(self)
+            def stop_callback(err):
+                LOG.debug(
+                    self._id,
+                    'stopped previously active client with same client id')
+                err = mqlexc.LocalReplacedError()
+                LOG.emit(
+                    'Client.start.stop_callback',
+                    previous_active_client._id,
+                    ERROR,
+                    err)
+                previous_active_client._emit(ERROR, err)
+                self._perform_connect(callback, self._service, False)
+            previous_active_client.stop(stop_callback)
+        else:
+            ACTIVE_CLIENTS.add(self)
+            self._perform_connect(callback, self._service, False)
+
         LOG.exit('Client.start', self._id, self)
         return self
 
@@ -834,14 +932,14 @@ class Client(object):
 
         LOG.entry('_process_queued_actions', self.get_id())
         LOG.parms(self._id, 'err:', err)
-        LOG.parms(self._id, 'state:', self.get_state())
+        LOG.data(self._id, 'state:', self.state)
         if err is None:
             LOG.data(
                 self._id,
                 'client._queued_subscriptions:',
                 self._queued_subscriptions)
-            while len(self._queued_subscriptions) > 0 and self.get_state() == STARTED:
-                sub = self._queued_subscriptions.pop()
+            while len(self._queued_subscriptions) > 0 and self.state == STARTED:
+                sub = self._queued_subscriptions.pop(0)
                 if sub['noop']:
                     # no-op so just trigger the callback wihtout actually
                     # subscribing
@@ -860,8 +958,8 @@ class Client(object):
                 self._id,
                 'client._queued_unsubscribes:',
                 self._queued_unsubscribes)
-            while len(self._queued_unsubscribes) > 0 and self.get_state() == STARTED:
-                sub = self._queued_unsubscribes.pop()
+            while len(self._queued_unsubscribes) > 0 and self.state == STARTED:
+                sub = self._queued_unsubscribes.pop(0)
                 if sub['noop']:
                     # no-op so just trigger the callback wihtout actually
                     # unsubscribing
@@ -880,8 +978,8 @@ class Client(object):
                 self._id,
                 'client._queued_sends:',
                 self._queued_sends)
-            while len(self._queued_sends) > 0 and self.get_state() == STARTED:
-                msg = self._queued_sends.pop()
+            while len(self._queued_sends) > 0 and self.state == STARTED:
+                msg = self._queued_sends.pop(0)
                 self.send(msg.topic, msg.data, msg.options, msg.callback)
 
         LOG.exit('_process_queued_actions', self._id, None)
@@ -892,241 +990,20 @@ class Client(object):
         contents of any that have arrived to the client event emitter.
         """
         LOG.entry_often('Client._check_for_messages', self._id)
-        if self.get_state() != STARTED or len(
+        if self.state != STARTED or len(
                 self._subscriptions) == 0 or MESSAGE not in self._callbacks:
             LOG.exit_often('Client._check_for_messages', self._id, None)
             return
-        try:
-            messages = self._messenger.receive(50)
-            if messages and len(messages) > 0:
-                LOG.debug(self._id, 'received ' +
-                          str(len(messages)) +
-                          ' messages')
-                for message in range(len(messages)):
-                    LOG.debug(self._id, 'processing message ' + str(message))
-                    msg = messages[message]
-                    msg.connection_id = self._connection_id
-                    data = msg.body
-
-                    topic = urlparse(msg.address).path[1:]
-                    auto_confirm = True
-                    qos = QOS_AT_MOST_ONCE
-
-                    def filter_function(item):
-                        # 1 added to length to account for the / we add
-                        address_no_service = item['address'][
-                            len(self._service) + 1:]
-                        # Possible to have 2 matches work out whether this is
-                        # for a share or private topic
-                        if item['share'] is None and 'private:' in msg.link_address:
-                            link_no_priv_share = msg.link_address[8:]
-                            if address_no_service == link_no_priv_share:
-                                return True
-                        elif item['share'] and 'share:' in msg.link_address:
-                            # Starting after the share: look for the next :
-                            # denoting the end of the share name and get
-                            # everything past that
-                            link_no_share = msg.link_address[
-                                msg.link_address.index(
-                                    ':',
-                                    7) +
-                                1:]
-                            if address_no_service == link_no_share:
-                                return True
-                            else:
-                                return False
-
-                    matched_subs = [
-                        sub for sub in self._subscriptions if filter_function(sub)]
-                    # Should only ever be one entry in matched_subs
-                    if len(matched_subs) == 1:
-                        qos = matched_subs[0]['qos']
-                        if qos == QOS_AT_LEAST_ONCE:
-                            auto_confirm = matched_subs[0]['auto_confirm']
-                        matched_subs[0]['unconfirmed'] += 1
-                    else:
-                        # ideally we shouldn't get here, but it can happen in
-                        # a timing window if we had received a message from a
-                        # subscription we've subsequently unsubscribed from
-                        LOG.debug(
-                            self._id,
-                            'No subscription matched message: ' +
-                            data + ' going to address: ' +
-                            msg.address)
-                        msg = None
-                        continue
-
-                    def _auto_confirm(delivery):
-                        LOG.entry(
-                            'Client._check_for_messages._auto_confirm',
-                            self._id)
-                        LOG.data(self._id, 'data:', data)
-                        LOG.exit(
-                            'Client._check_for_messages._auto_confirm',
-                            self._id,
-                            None)
-
-                    def _no_auto_confirm(delivery, msg=None):
-                        LOG.entry(
-                            'Client._check_for_messages._no_auto_confirm',
-                            self._id)
-                        LOG.data(self._id, 'delivery:', delivery)
-                        if self.is_stopped():
-                            err = mqlex.NetworkError('not started')
-                            LOG.error(
-                                'Client._check_for_messages._no_auto_confirm',
-                                self._id,
-                                err)
-                            raise err
-                        if msg:
-                            # Also throw mqlex.NetworkError if the client has
-                            # disconnected at some point since this particular
-                            # message was received
-                            if msg.connection_id != self._connection_id:
-                                err = mqlex.NetworkError(
-                                    'Client has reconnected since this ' +
-                                    'message was received')
-                                LOG.error('_no_auto_confirm', self._id, err)
-                                raise err
-                            subscription = matched_subs[0]
-                            self._messenger.settle(msg)
-                            subscription['unconfirmed'] -= 1
-                            subscription['confirmed'] += 1
-                            LOG.data(
-                                self._id,
-                                '[credit, unconfirmed, confirmed]:',
-                                '[' +
-                                subscription['credit'] +
-                                ', ' +
-                                subscription['unconfirmed'] +
-                                ', ' +
-                                subscription['confirmed'])
-                            # Ask to flow more messages if >= 80% of available
-                            # credit (e.g. not including unconfirmed messages)
-                            # has been used or we have just confirmed
-                            # everything
-                            available = subscription[
-                                'credit'] - subscription['unconfirmed']
-                            if (
-                                    available /
-                                    subscription['confirmed']) <= 1.25 or (
-                                    subscription['unconfirmed'] == 0 and subscription['confirmed'] > 0):
-                                self._messenger.flow(
-                                    self._service + '/' + msg.link_address,
-                                    subscription['confirmed'])
-                                subscription['confirmed'] = 0
-                            #del msg
-                        LOG.exit(
-                            'Client._check_for_messages._no_auto_confirm',
-                            self._id,
-                            None)
-                    if auto_confirm:
-                        confirm_delivery = _auto_confirm
-                    else:
-                        confirm_delivery = _no_auto_confirm
-                    delivery = {
-                        'message': {
-                            'properties': {
-                                'content_type': msg.content_type
-                            },
-                            'topic': topic,
-                            'confirm_delivery': confirm_delivery
-                        }
-                    }
-                    link_address = msg.link_address
-                    if link_address:
-                        delivery['destination'] = {}
-                        split = link_address.split(':', 3)
-                        if 'share:' in link_address:
-                            share = link_address.index('share:')
-                        else:
-                            share = 1
-                        if share == 0:
-                            delivery['destination']['share'] = split[1]
-                            delivery['destination']['topic_pattern'] = split[2]
-                        else:
-                            delivery['destination']['topic_pattern'] = split[1]
-
-                    if msg.ttl > 0:
-                        delivery['message']['ttl'] = msg.ttl
-
-                    annots = msg.annotations
-                    malformed = {
-                        'MQMD': {},
-                        'condition': None
-                    }
-                    if annots is not None:
-                        for i in range(len(annots)):
-                            if annots[i] and annots[i].key:
-                                if annots[i].key == 'x-opt-message-malformed-condition':
-                                    malformed['condition'] = annots[i].value
-                                elif annots[i].key == 'x-opt-message-malformed-description':
-                                    malformed['description'] = annots[i].value
-                                elif annots[i].key == 'x-opt-message-malformed-MQMD-CodedCharSetId':
-                                    malformed['MQMD']['CodedCharSetId'] = int(
-                                        annots[i].value)
-                                elif annots[i].key == 'x-opt-message-malformed-MQMD.Format':
-                                    malformed['MQMD'][
-                                        'Format'] = annots[i].value
-
-                    if malformed['condition']:
-                        if MALFORMED in self._callbacks:
-                            delivery['malformed'] = malformed
-                            self._emit(MALFORMED, msg.body, delivery)
-                        else:
-                            msg = None
-                            raise mqlex.MQLightError(
-                                'no listener for malformed event')
-                    else:
-                        LOG.emit(
-                            'Client._check_for_messages',
-                            self._id,
-                            MESSAGE,
-                            data,
-                            delivery)
-                        self._emit(MESSAGE, data, delivery)
-
-                    if self.is_stopped():
-                        LOG.debug(
-                            self._id,
-                            'client is stopped so not accepting or settling ' +
-                            'message')
-                        msg = None
-                        # def msg
-                    else:
-                        if qos == QOS_AT_MOST_ONCE:
-                            self._messenger.accept(msg)
-                        if qos == QOS_AT_MOST_ONCE or auto_confirm:
-                            self._messenger.settle(msg)
-                            matched_subs[0]['unconfirmed'] -= 1
-                            matched_subs[0]['confirmed'] += 1
-                            LOG.data(
-                                self._id,
-                                '[credit, unconfirmed, confirmed]:',
-                                '[' +
-                                str(matched_subs[0]['credit']) +
-                                ', ' +
-                                str(matched_subs[0]['unconfirmed']) +
-                                ', ' +
-                                str(matched_subs[0]['confirmed']) +
-                                ']')
-                            # Ask to flow more messages if >= 80% of available
-                            # credit (e.g. not including unconfirmed messages)
-                            # has been used. Or we have just confirmed
-                            # everything.
-                            available = matched_subs[0][
-                                'credit'] - matched_subs[0]['unconfirmed']
-                            if available / matched_subs[0]['confirmed'] <= 1.25 or (
-                                    matched_subs[0]['unconfirmed'] == 0 and matched_subs[0]['confirmed'] > 0):
-                                self._messenger.flow(
-                                    self._service +
-                                    '/' +
-                                    msg.link_address,
-                                    matched_subs[0]['confirmed'])
-                                matched_subs[0]['confirmed'] = 0
-                                msg = None
-                                #del msg
-
+        #try:
+        messages = self._messenger.receive(50)
+        if messages and len(messages) > 0:
+            LOG.debug(self._id, 'received ' +
+                      str(len(messages)) +
+                      ' messages')
+            for message in range(len(messages)):
+                LOG.debug(self._id, 'processing message ' + str(message))
+                self._process_message(messages[message])
+        """
         except Exception as exc:
             LOG.error('Client._check_for_messages', self._id, exc)
 
@@ -1137,12 +1014,237 @@ class Client(object):
                     self._reconnect()
             timer = threading.Timer(1, next_tick)
             timer.start()
-
-        if self.get_state() == STARTED:
+        """
+        if self.state == STARTED:
             timer = threading.Timer(0.2, self._check_for_messages)
             timer.start()
 
         LOG.exit_often('Client._check_for_messages', self._id, None)
+
+    def _process_message(self, msg):
+        """
+        Process received message
+        """
+        LOG.entry_often('Client._process_message', self._id)
+        LOG.parms(self._id, 'msg:', msg)
+        msg.connection_id = self._connection_id
+
+        # If body is a JSON'ified object, try to parse it back to a js obj
+        if msg.content_type == 'application/json':
+            try:
+                data = loads(msg.body)
+            except Exception as exc:
+                LOG.error('Client._process_message', self._id, exc)
+        else:
+            data = msg.body
+
+        topic = urlparse(msg.address).path[1:]
+        auto_confirm = True
+        qos = QOS_AT_MOST_ONCE
+
+        def filter_func(item):
+            # 1 added to length to account for the / we add
+            address_no_service = item['address'][len(self._service) + 1:]
+            # Possible to have 2 matches work out whether this is
+            # for a share or private topic
+            if item['share'] is None and 'private:' in msg.link_address:
+                link_no_priv_share = msg.link_address[8:]
+                if address_no_service == link_no_priv_share:
+                    return True
+            elif item['share'] and 'share:' in msg.link_address:
+                # Starting after the share: look for the next :
+                # denoting the end of the share name and get
+                # everything past that
+                link_no_share = msg.link_address[
+                    msg.link_address.index(':', 7) +
+                    1:]
+                if address_no_service == link_no_share:
+                    return True
+                else:
+                    return False
+
+        matched_subs = [
+            sub for sub in self._subscriptions if filter_func(sub)]
+        # Should only ever be one entry in matched_subs
+        if len(matched_subs) > 1:
+            err = mqlexc.MQLightError(
+                'received message matched more than one subscription')
+            LOG.ffdc(
+                'Client._process_message',
+                'ffdc003',
+                self._id,
+                err)
+        subscription = matched_subs[0]
+        if subscription:
+            qos = subscription['qos']
+            if qos == QOS_AT_LEAST_ONCE:
+                auto_confirm = subscription['auto_confirm']
+            subscription['unconfirmed'] += 1
+        else:
+            # ideally we shouldn't get here, but it can happen in
+            # a timing window if we had received a message from a
+            # subscription we've subsequently unsubscribed from
+            LOG.debug(
+                self._id,
+                'No subscription matched message: ' +
+                data + ' going to address: ' +
+                msg.address)
+            msg = None
+            LOG.exit_often('Client._process_message', self._id, None)
+            return
+
+        def _confirm(delivery, msg=None):
+            LOG.entry(
+                'Client._process_message._confirm',
+                self._id)
+            LOG.data(self._id, 'delivery:', delivery)
+            if self.is_stopped():
+                err = mqlexc.NetworkError('not started')
+                LOG.error(
+                    'Client._process_message._confirm',
+                    self._id,
+                    err)
+                raise err
+            if msg:
+                # Also throw mqlexc.NetworkError if the client has
+                # disconnected at some point since this particular
+                # message was received
+                if msg.connection_id != self._connection_id:
+                    err = mqlexc.NetworkError(
+                        'Client has reconnected since this ' +
+                        'message was received')
+                    LOG.error('Client._process_message._confirm', self._id, err)
+                    raise err
+                self._messenger.settle(msg)
+                subscription['unconfirmed'] -= 1
+                subscription['confirmed'] += 1
+                LOG.data(
+                    self._id,
+                    '[credit, unconfirmed, confirmed]:',
+                    '[' +
+                    subscription['credit'] +
+                    ', ' +
+                    subscription['unconfirmed'] +
+                    ', ' +
+                    subscription['confirmed'] +
+                    ']')
+                # Ask to flow more messages if >= 80% of available
+                # credit (e.g. not including unconfirmed messages)
+                # has been used or we have just confirmed
+                # everything
+                available = subscription['credit'] - subscription['unconfirmed']
+                if (available / subscription[
+                    'confirmed']) <= 1.25 or (subscription[
+                    'unconfirmed'] == 0 and subscription[
+                    'confirmed'] > 0):
+                    self._messenger.flow(
+                        self._service + '/' + msg.link_address,
+                        subscription['confirmed'])
+                    subscription['confirmed'] = 0
+                #del msg
+            LOG.exit(
+                'Client._process_message._confirm',
+                self._id,
+                None)
+        delivery = {
+            'message': {
+                'topic': topic,
+            }
+        }
+
+        if qos >= QOS_AT_LEAST_ONCE and not auto_confirm:
+            delivery['message']['confirm_delivery'] = _confirm
+        link_address = msg.link_address
+        if link_address:
+            delivery['destination'] = {}
+            link = link_address
+            if 'share:' in link and link.index('share:') == 0:
+                # Remove 'share:' prefix from link name
+                link = link[6:len(link_address)]
+                # Extract share name and add to delivery information
+                delivery['destination']['share'] = link[0, link.index(':')]
+            # Extract topic_pattern and add to delivery information
+            delivery['destination']['topic_pattern'] = link[
+                link.index(':')+1:len(link)]
+
+        if msg.ttl > 0:
+            delivery['message']['ttl'] = msg.ttl
+
+        annots = msg.annotations
+        malformed = {
+            'MQMD': {},
+            'condition': None
+        }
+        mal_cond = 'x-opt-message-malformed-condition'
+        mal_desc = 'x-opt-message-malformed-description'
+        mal_ccsi = 'x-opt-message-malformed-MQMD-CodedCharSetId'
+        mal_form = 'x-opt-message-malformed-MQMD.Format'
+        if annots is not None:
+            for i in range(len(annots)):
+                if annots[i] and annots[i].key:
+                    if annots[i].key == mal_cond:
+                        malformed['condition'] = annots[i].value
+                    elif annots[i].key == mal_desc:
+                        malformed['description'] = annots[i].value
+                    elif annots[i].key == mal_ccsi:
+                        malformed['MQMD']['CodedCharSetId'] = int(
+                        annots[i].value)
+                    elif annots[i].key == mal_form:
+                        malformed['MQMD']['Format'] = annots[i].value
+
+        if malformed['condition']:
+            if MALFORMED in self._callbacks:
+                delivery['malformed'] = malformed
+                self._emit(MALFORMED, msg.body, delivery)
+            else:
+                msg = None
+                raise mqlexc.MQLightError('no listener for malformed event')
+        else:
+            LOG.emit(
+                'Client._process_message',
+                self._id,
+                MESSAGE,
+                data,
+                delivery)
+            self._emit(MESSAGE, data, delivery)
+
+        if self.is_stopped():
+            LOG.debug(
+                self._id,
+                'client is stopped so not accepting or settling message')
+            msg = None
+        else:
+            if qos == QOS_AT_MOST_ONCE:
+                self._messenger.accept(msg)
+            if qos == QOS_AT_MOST_ONCE or auto_confirm:
+                self._messenger.settle(msg)
+                subscription['unconfirmed'] -= 1
+                subscription['confirmed'] += 1
+                LOG.data(
+                    self._id,
+                    '[credit, unconfirmed, confirmed]:',
+                    '[' +
+                    str(subscription['credit']) +
+                    ', ' +
+                    str(subscription['unconfirmed']) +
+                    ', ' +
+                    str(subscription['confirmed']) +
+                    ']')
+                # Ask to flow more messages if >= 80% of available
+                # credit (e.g. not including unconfirmed messages)
+                # has been used. Or we have just confirmed
+                # everything.
+                available = subscription['credit'] - subscription['unconfirmed']
+                if available / subscription[
+                    'confirmed'] <= 1.25 or (subscription[
+                    'unconfirmed'] == 0 and subscription[
+                    'confirmed'] > 0):
+                    self._messenger.flow(
+                        self._service + '/' + msg.link_address,
+                        subscription['confirmed'])
+                    subscription['confirmed'] = 0
+                    msg = None
+        LOG.exit_often('Client._process_message', self._id, None)
 
     def stop(self, callback=None):
         """
@@ -1164,6 +1266,14 @@ class Client(object):
             callback: function to call when the connection is closed
         """
         LOG.entry('Client.stop', self._id)
+        LOG.parms(NO_CLIENT_ID, 'callback:', callback)
+
+        # If client has been replaced then throw a ReplacedError
+        if self.state == REPLACED:
+            err = mqlexc.LocalReplacedError()
+            LOG.error('Client.stop', self._id, err)
+            raise err
+
         if (callback and not hasattr(callback, '__call__')):
             raise TypeError('callback must be a function')
 
@@ -1186,6 +1296,7 @@ class Client(object):
         Performs the disconnection
         """
         LOG.entry('Client._perform_disconnect', self._id)
+        LOG.parms(NO_CLIENT_ID, 'callback:', callback)
         self._set_state(STOPPING)
 
         # Only disconnect when all outstanding send operations are complete
@@ -1199,7 +1310,7 @@ class Client(object):
 
                 # Clear all queued sends as we are disconnecting
                 while len(self._queued_sends) > 0:
-                    msg = self._queued_sends.pop()
+                    msg = self._queued_sends.pop(0)
 
                     def next_tick():
                         """
@@ -1209,7 +1320,7 @@ class Client(object):
                             'Client._perform_disconnect.next_tick',
                             self._id)
                         msg['callback'](
-                            mqlex.StoppedError(
+                            mqlexc.StoppedError(
                                 'send aborted due to disconnect'))
                         LOG.exit(
                             'Client._perform_disconnect.next_tick',
@@ -1221,16 +1332,22 @@ class Client(object):
                 # Clear the active subscriptions list as we were asked to
                 # disconnect
                 LOG.data(self._id, 'self._subscriptions:', self._subscriptions)
-                self._subscriptions = self._subscriptions[::-1]
+                self._subscriptions = []
 
                 # Indicate that we've disconnected
                 client._set_state(STOPPED)
+
+                # Remove ourself from the active client list
+                active_client = ACTIVE_CLIENTS.get(self._id)
+                if self == active_client:
+                    ACTIVE_CLIENTS.remove(self._id)
                 LOG.emit(
                     'Client._perform_disconnect.stop_processing',
                     self._id,
                     STOPPED)
-                self._first_start = True
-                self._emit(STOPPED, True)
+                if not self._first_start:
+                    self._first_start = True
+                    self._emit(STOPPED, None)
 
                 if callback:
                     LOG.entry('Client._perform_disconnect.callback', self._id)
@@ -1243,10 +1360,39 @@ class Client(object):
                     'Client._perform_disconnect.stop_processing',
                     self._id,
                     None)
-            _stop_messenger(self, stop_processing, callback)
+            self._stop_messenger(stop_processing, callback)
 
         LOG.exit('Client._perform_disconnect', self._id, None)
         return
+
+    def _stop_messenger(self, stop_processing_callback, callback=None):
+        """
+        Function to trigger the client to disconnect
+        """
+        LOG.entry('Client._stop_messenger', self._id)
+        LOG.parms(
+            NO_CLIENT_ID,
+            'stop_processing_callback:',
+            stop_processing_callback)
+        LOG.parms(NO_CLIENT_ID, 'callback:', callback)
+        stopped = True
+        # If messenger available then request it to stop
+        # (otherwise it must have already been stopped)
+        if self._messenger:
+            stopped = self._messenger.stop()
+
+        # If stopped then perform the required stop processing
+        if stopped:
+            if self._heartbeat_timeout:
+                self._heartbeat_timeout.cancel()
+            stop_processing_callback(self, callback)
+        else:
+            # Otherwise check for the messenger being stopped again
+            timer = threading.Timer(
+                1,
+                self._stop_messenger, [stop_processing_callback, callback])
+            timer.start()
+        LOG.exit('Client._stop_messenger', self._id, None)
 
     def _connect_to_service(self, callback):
         """
@@ -1255,11 +1401,12 @@ class Client(object):
         again. Callback happens once a successful connect/reconnect occurs
         """
         LOG.entry('Client._connect_to_service', self._id)
+        LOG.parms(NO_CLIENT_ID, 'callback:', callback)
         if self.is_stopped():
             if callback:
                 LOG.entry('Client._connect_to_service.callback', self._id)
                 callback(
-                    mqlex.StoppedError('connect aborted due to disconnect'))
+                    mqlexc.StoppedError('connect aborted due to disconnect'))
                 LOG.exit('Client._connect_to_service.callback', self._id, None)
             LOG.exit('Client._connect_to_service', self._id, None)
             return
@@ -1306,12 +1453,13 @@ class Client(object):
                 else:
                     connect_service = service
 
-                if self._security_options.ssl_trust_certificate is not None:
-                    ssl_trust_certificate = self._security_options.ssl_trust_certificate
+                s_o = self._security_options
+                if s_o.ssl_trust_certificate is not None:
+                    ssl_trust_certificate = s_o.ssl_trust_certificate
                 else:
                     ssl_trust_certificate = None
-                if self._security_options.ssl_verify_name is not None:
-                    ssl_verify_name = self._security_options.ssl_verify_name
+                if s_o.ssl_verify_name is not None:
+                    ssl_verify_name = s_o.ssl_verify_name
                 else:
                     ssl_verify_name = None
 
@@ -1336,10 +1484,10 @@ class Client(object):
                 error = exc
                 LOG.ffdc(
                     'Client._connect_to_service',
-                    'ffdc001',
+                    'ffdc002',
                     self._id,
                     exc)
-                raise mqlex.MQLightError(exc)
+                raise mqlexc.MQLightError(exc)
 
         # If we've successfully connected then we're done, otherwise we'll
         # retry
@@ -1389,6 +1537,10 @@ class Client(object):
             LOG.data(self._id, 'heartbeat_interval: ', heartbeat_interval)
             if heartbeat_interval > 0:
                 def perform_heartbeat(heartbeat_interval):
+                    """
+                    Performs an action on the client to keep the connection
+                    alive
+                    """
                     LOG.entry(
                         'Client._connect_to_service.perform_heartbeat',
                         self._id)
@@ -1434,8 +1586,9 @@ class Client(object):
             interval = min(retry_cap, (lower_bound + jitter))
             # times by CONNECT_RETRY_INTERVAL for unittest purposes
             interval = round(interval) * CONNECT_RETRY_INTERVAL
-            LOG.data(self._id, 'trying to connect again ' +
-                     'after ' + str(interval) + ' seconds')
+            LOG.data(
+                self._id,
+                'trying to connect again after ' + str(interval) + ' seconds')
             timer = threading.Timer(interval, retry)
             timer.start()
 
@@ -1461,15 +1614,15 @@ class Client(object):
             The instance of the client if reconnect succeeded otherwise None
         """
         LOG.entry('Client._reconnect', self._id)
-        if self.get_state() != STARTED:
+        if self.state != STARTED:
             if self.is_stopped():
                 return
-            elif self.get_state() == RETRYING:
+            elif self.state == RETRYING:
                 return self
         self._set_state(RETRYING)
 
         # Stop the messenger to free the object then attempt a reconnect
-        def stop_processing(client, callback=None):
+        def stop_processing(client):
             LOG.entry('Client.reconnect.stop_processing', client._id)
 
             if client._heartbeat_timeout:
@@ -1478,9 +1631,9 @@ class Client(object):
             # clear the subscriptions list, if the cause of the reconnect
             # happens during check for messages we need a 0 length so it will
             # check once reconnected.
-            client._queued_subscriptions = client._queued_subscriptions[::-1]
+            client._queued_subscriptions = client._queued_subscriptions
             # also clear any left over outstanding sends
-            client._outstanding_sends = client._outstanding_sends[::-1]
+            client._outstanding_sends = []
             client._perform_connect(
                 self._process_queued_actions,
                 self._service,
@@ -1488,7 +1641,7 @@ class Client(object):
 
             LOG.exit('Client.reconnect.stop_processing', client._id, None)
 
-        _stop_messenger(self, stop_processing)
+        self._stop_messenger(stop_processing)
         LOG.exit('Client._reconnect', self._id, self)
         return self
 
@@ -1497,7 +1650,7 @@ class Client(object):
         Returns:
             The client id
         """
-        LOG.data('id', self._id)
+        LOG.data(self._id, self._id)
         return self._id
 
     def get_service(self):
@@ -1505,7 +1658,7 @@ class Client(object):
         Returns:
             The service if connected otherwise None
         """
-        if self.get_state() == STARTED:
+        if self.state == STARTED:
             LOG.data(self._id, 'service:', self._service)
             return self._service
         else:
@@ -1529,15 +1682,17 @@ class Client(object):
         if state in STATES:
             self._state = state
         else:
-            raise mqlex.InvalidArgumentError('invalid state')
+            raise mqlexc.InvalidArgumentError('invalid state')
+
+    state = property(get_state)
 
     def is_stopped(self):
         """
         Returns:
             True if in disconnected or disconnecting state, otherwise False
         """
-        LOG.data(self._id, 'state:', self._state)
-        return self._state in (STOPPED, STOPPING)
+        LOG.data(self._id, 'state:', self.state)
+        return self.state in (STOPPED, STOPPING)
 
     def add_listener(self, event, callback):
         """
@@ -1548,7 +1703,7 @@ class Client(object):
             callback: function to call when the event is triggered
         Raises:
             TypeError: if callback is not a function
-            mqlex.InvalidArgumentError: if event is invalid
+            mqlexc.InvalidArgumentError: if event is invalid
         """
         LOG.entry('Client.add_listener', self._id)
         LOG.parms(self._id, 'event:', event)
@@ -1562,8 +1717,34 @@ class Client(object):
             else:
                 raise TypeError('callback must be a function')
         else:
-            raise mqlex.InvalidArgumentError('invalid event ' + str(event))
+            raise mqlexc.InvalidArgumentError('invalid event ' + str(event))
         LOG.exit('Client.add_listener', self._id, None)
+
+    def add_once_listener(self, event, callback):
+        """
+        Registers a callback to be called when the event is emitted
+
+        Args:
+            event: event the callback is registered on
+            callback: function to call when the event is triggered
+        Raises:
+            TypeError: if callback is not a function
+            mqlexc.InvalidArgumentError: if event is invalid
+        """
+        LOG.entry('Client.add_once_listener', self._id)
+        LOG.parms(self._id, 'event:', event)
+        LOG.parms(self._id, 'callback:', callback.__name__)
+
+        if event in EVENTS:
+            if hasattr(callback, '__call__'):
+                if event not in self._once_callbacks:
+                    self._once_callbacks[event] = []
+                self._once_callbacks[event].append(callback)
+            else:
+                raise TypeError('callback must be a function')
+        else:
+            raise mqlexc.InvalidArgumentError('invalid event ' + str(event))
+        LOG.exit('Client.add_once_listener', self._id, None)
 
     def del_listener(self, event, callback):
         """
@@ -1573,14 +1754,16 @@ class Client(object):
             event: event the callback is registered on
             callback: callback function to remove
         Raises:
-            mqlex.InvalidArgumentError: if event is invalid
+            mqlexc.InvalidArgumentError: if event is invalid
         """
         LOG.entry('Client.del_listener', self._id)
+        LOG.parms(self._id, 'event:', event)
+        LOG.parms(self._id, 'callback:', callback.__name__)
         if event in EVENTS:
             if event in self._callbacks and callback in self._callbacks[event]:
                 self._callbacks[event].remove(callback)
         else:
-            raise mqlex.InvalidArgumentError('invalid event ' + str(event))
+            raise mqlexc.InvalidArgumentError('invalid event ' + str(event))
         LOG.exit('Client.del_listener', self._id, None)
 
     def _emit(self, event, *args, **kwargs):
@@ -1588,21 +1771,28 @@ class Client(object):
         Calls all the callbacks registered with the events that is emitted
 
         Raises:
-            mqlex.InvalidArgumentError: if event is invalid
+            mqlexc.InvalidArgumentError: if event is invalid
         """
         LOG.entry('Client._emit', self._id)
         LOG.parms(self._id, 'event:', event)
         LOG.parms(self._id, 'args:', args)
         LOG.parms(self._id, 'kwargs:', kwargs)
         callbacks = []
+        once_callbacks = []
         if event in EVENTS:
             if event in self._callbacks:
                 for callback in self._callbacks[event]:
                     callbacks.append(callback)
                 for callback in callbacks:
                     callback(*args, **kwargs)
+            if event in self._once_callbacks:
+                for callback in self._once_callbacks[event]:
+                    once_callbacks.append(callback)
+                for callback in once_callbacks:
+                    callback(*args, **kwargs)
+                    self._once_callbacks[event].remove(callback)
         else:
-            raise mqlex.InvalidArgumentError('invalid event ' + str(event))
+            raise mqlexc.InvalidArgumentError('invalid event ' + str(event))
         LOG.exit('Client._emit', self._id, None)
 
     def send(self, topic, data, options=None, callback=None):
@@ -1621,21 +1811,31 @@ class Client(object):
             state
         Raises:
             TypeError: if any of the arguments is invalid
-            mqlex.StoppedError: if the client is disconnected
+            mqlexc.StoppedError: if the client is disconnected
         """
         LOG.entry('Client.send', self._id)
+
+        # If client has been replaced then throw a ReplacedError
+        if self.state == REPLACED:
+            err = mqlexc.LocalReplacedError()
+            LOG.error('Client.send', self._id, err)
+            raise err
+
         next_message = False
         # Validate the passed parameters
-        if topic is None or len(topic) == 0:
-            raise mqlex.InvalidArgumentError('Cannot send to None topic')
+        if topic is None:
+            raise mqlexc.InvalidArgumentError('Cannot send to None topic')
         else:
             topic = str(topic)
+            if len(topic) == 0:
+                raise mqlexc.InvalidArgumentError('Cannot send to None topic')
         LOG.parms(self._id, 'topic:', topic)
 
         if data is None:
-            raise mqlex.InvalidArgumentError('Cannot send no data')
+            raise mqlexc.InvalidArgumentError('Cannot send no data')
         elif hasattr(data, '__call__'):
             raise TypeError('Cannot send a function')
+        LOG.parms(self._id, 'type(data)', str(type(data)))
         LOG.parms(self._id, 'data:', data)
 
         # Validate the remaining optional parameters, assigning local variables
@@ -1649,7 +1849,7 @@ class Client(object):
             if isinstance(options, dict):
                 LOG.parms(self._id, 'options:', options)
             else:
-                raise TypeError('options must be an dict type')
+                raise TypeError('options must be a dict type')
 
         qos = QOS_AT_MOST_ONCE
         ttl = None
@@ -1658,7 +1858,7 @@ class Client(object):
                 if options['qos'] in QOS:
                     qos = options['qos']
                 else:
-                    raise mqlex.InvalidArgumentError(
+                    raise mqlexc.InvalidArgumentError(
                         'options.qos value ' + str(options['qos']) +
                         ' is invalid must evaluate to 0 or 1')
             if 'ttl' in options:
@@ -1678,16 +1878,16 @@ class Client(object):
             if not hasattr(callback, '__call__'):
                 raise TypeError('callback must be a function type')
         elif qos == QOS_AT_LEAST_ONCE:
-            raise mqlex.InvalidArgumentError(
+            raise mqlexc.InvalidArgumentError(
                 'callback must be specified when options.qos value of 1 ' +
                 '(at least once) is specified')
 
         # Ensure we have attempted a connect
         if self.is_stopped():
-            raise mqlex.StoppedError('not started')
+            raise mqlexc.StoppedError('not started')
 
         # Ensure we are not retrying otherwise queue message and return
-        if self.get_state() == RETRYING or self.get_state() == STARTING:
+        if self.state in (RETRYING, STARTING):
             self._queued_sends.append({
                 'topic': topic,
                 'data': data,
@@ -1700,7 +1900,7 @@ class Client(object):
 
         # Send the data as a message to the specified topic
         msg = None
-        local_message_id = None
+        in_outstanding_sends = False
         try:
             msg = mqlightproton._MQLightMessage()
             address = self.get_service()
@@ -1722,191 +1922,207 @@ class Client(object):
                 msg.body = data
                 msg.content_type = 'application/octet-stream'
 
+            # Record that a send operation is in progress
+            self._outstanding_sends.append({
+                'msg': msg,
+                'qos': qos,
+                'callback': callback,
+                'topic': topic,
+                'options': options
+            })
+            in_outstanding_sends = True
+
             self._messenger.put(msg, qos)
             self._messenger.send()
 
-            # Record that a send operation is in progress
-            local_message_id = str(uuid.uuid4()).replace('-', '_')
-            self._outstanding_sends.append(local_message_id)
+            if len(self._outstanding_sends) == 1:
+                def send_outbound_msg():
+                    LOG.entry('Client.send.send_outbound_msg', self._id)
+                    LOG.data(
+                        self._id,
+                        '_outstanding_sends:',
+                        self._outstanding_sends)
+                    try:
+                        if not self._messenger.stopped:
+                            # Write any data buffered within messenger
+                            tries = 50
+                            p_o = self._messenger.pending_outbound(
+                                self.get_service())
+                            while tries > 0 and p_o:
+                                tries -= 1
+                                self._messenger.send()
+                                p_o = self._messenger.pending_outbound(
+                                    self.get_service())
 
-            def until_send_complete(msg, local_message_id, send_callback):
-                """
-                Setup a timer to trigger the callback once the msg has been
-                sent, or immediately if no message to be sent
-                """
-                LOG.entry('Client.send.until_send_complete', self._id)
-                LOG.parms(self._id, 'msg:', msg)
-                LOG.parms(self._id, 'local_message_id:', local_message_id)
-                LOG.parms(self._id, 'send_callback:', send_callback)
-                try:
-                    complete = False
-                    err = None
-                    if (not self._messenger.stopped):
-                        status = self._messenger.status(msg)
-                        LOG.data(self._id, 'status:', status)
-                        if str(status) in ('ACCEPTED', 'SETTLED'):
-                            self._messenger.settle(msg)
-                            complete = True
-                        elif str(status) == 'REJECTED':
-                            complete = True
-                            err_msg = self._messenger.status_error(msg)
-                            if err_msg is None:
-                                err_msg = 'send failed - message was rejected'
-                            err = mqlex.MQLightError(err_msg)
-                        elif str(status) == 'RELEASED':
-                            complete = True
-                            err = mqlex.MQLightError(
-                                'send failed - message was released')
-                        elif str(status) == 'MODIFIED':
-                            complete = True
-                            err = mqlex.MQLightError(
-                                'send failed - message was modified')
-                        elif str(status) == 'ABORTED':
-                            complete = True
-                            err = mqlex.MQLightError(
-                                'send failed - message was aborted')
+                            if tries == 0:
+                                LOG.debug(self._id, 'output still pending')
 
-                        # if complete then do final processing of this message.
-                        if complete:
-                            if local_message_id in self._outstanding_sends:
-                                self._outstanding_sends.remove(
-                                    local_message_id)
-
-                            # If previously send() returned false and now the
-                            # backlog of messages is cleared, emit a drain
-                            # event
+                            # See if any of the outstanding send operations have
+                            # now been completed
                             LOG.data(
                                 self._id,
-                                'outstandingSends:',
+                                'length:',
                                 len(self._outstanding_sends))
-                            if self._drain_event_required and len(
-                                    self._outstanding_sends) <= 1:
-                                LOG.emit(
-                                    'Client.send.until_send_complete',
-                                    self._id,
-                                    DRAIN)
-                                self._drain_event_required = False
-                                self._emit(DRAIN)
+                            while len(self._outstanding_sends) > 0:
+                                in_flight = self._outstanding_sends[0:1][0]
+                                status = str(self._messenger.status(
+                                    in_flight['msg']))
+                                LOG.data(self._id, 'status:', status)
+                                complete = False
+                                err = None
+                                if in_flight['qos'] == QOS_AT_MOST_ONCE:
+                                    complete = (status == 'UNKNOWN')
+                                else:
+                                    if status in ('ACCEPTED', 'SETTLED'):
+                                        self._messenger.settle(in_flight['msg'])
+                                        complete = True
+                                    elif status == 'REJECTED':
+                                        complete = True
+                                        err_msg = self._messenger.status_error(
+                                            in_flight['msg'])
+                                        if err_msg is None or err_msg == '':
+                                            err_msg = 'send failed - ' + \
+                                            'message was rejected'
+                                        err = mqlexc.MQLightError(err_msg)
+                                    elif status == 'RELEASED':
+                                        complete = True
+                                        err = mqlexc.MQLightError(
+                                            'send failed - message was ' + \
+                                            'released')
+                                    elif status == 'MODIFIED':
+                                        complete = True
+                                        err = mqlexc.MQLightError(
+                                            'send failed - message was ' + \
+                                            'modified')
+                                    elif status == 'ABORTED':
+                                        complete = True
+                                        err = mqlexc.MQLightError(
+                                            'send failed - message was aborted')
+                                    elif status == 'PENDING':
+                                        self._messenger.send()
+                                LOG.data(self._id, 'complete:', complete)
+                                if complete:
+                                    # Remove send operation from list of
+                                    # outstanding send ops
+                                    self._outstanding_sends.pop(0)
 
-                            # invoke the callback, if specified
-                            if send_callback:
-                                decoded = unquote(msg.address)
-                                topic = urlparse(decoded).path[1:]
-                                LOG.entry(
-                                    'Client.send.until_send_complete.callback1',
-                                    self._id)
-                                send_callback(
-                                    err,
-                                    topic,
-                                    msg.body,
-                                    options)
-                                LOG.exit(
-                                    'Client.send.until_send_complete.callback1',
-                                    self._id,
-                                    None)
-                            #del msg
-                            LOG.exit(
-                                'Client.send.until_send_complete',
-                                self._id,
-                                None)
-                            return
+                                    # Generate drain event
+                                    if self._drain_event_required and len(
+                                            self._outstanding_sends) <= 1:
+                                        LOG.emit(
+                                            'Client.send.send_outbound_msg',
+                                            self._id,
+                                            DRAIN)
+                                        self._drain_event_required = False
+                                        self._emit(DRAIN)
 
-                        # message not sent yet, so check again in a second or
-                        # so
-                        self._messenger.send()
-                        timer = threading.Timer(
-                            1,
-                            until_send_complete,
-                            [msg, local_message_id, send_callback])
-                        timer.start()
-                    else:
-                        # TODO Not sure we can actually get here (so FFDC?)
-                        if local_message_id:
-                            if local_message_id in self._outstanding_sends:
-                                self._outstanding_sends.remove(
-                                    local_message_id)
-                        if send_callback:
-                            err = mqlex.StoppedError(
-                                'send may not have completed due to ' +
-                                'client stop')
-                            LOG.entry(
-                                'Client.send.until_send_complete.callback2',
-                                self._id)
-                            send_callback(
-                                err,
-                                topic,
-                                msg.body,
-                                options)
-                            LOG.exit(
-                                'Client.send.until_send_complete.callback2',
-                                self._id,
-                                None)
-                        #del msg
-                        LOG.exit(
-                            'Client.send.until_send_complete',
+                                    # invoke the callback, if specified
+                                    if in_flight['callback']:
+                                        LOG.entry(
+                                            'Client.send.send_outbound_msg.cb1',
+                                            self._id)
+                                        in_flight['callback'](
+                                            err,
+                                            in_flight['topic'],
+                                            in_flight['msg'].body,
+                                            in_flight['options'])
+                                        LOG.exit(
+                                            'Client.send.send_outbound_msg.cb1',
+                                            self._id,
+                                            None)
+
+                                    # Free resources used by the message
+                                    # del in_flight['msg']
+                                else:
+                                    # Can't make any more progress for now -
+                                    # schedule remaining work for processing in
+                                    # the future
+                                    timer = threading.Timer(
+                                        1,
+                                        send_outbound_msg)
+                                    timer.start()
+                        else:
+                            # Messenger has been stopped
+                            callback_error = None
+                            self._queued_sends = self._outstanding_sends
+                            self._outstanding_sends = []
+
+                            if callback_error is not None:
+                                LOG.error(
+                                    'Client.send.send_outbound_msg',
+                                    self._id,
+                                    callback_error)
+
+                    except Exception as exc:
+                        error = exc
+                        callback_error = None
+                        do_reconnect = False
+                        LOG.error(
+                            'Client.send.send_outbound_msg',
                             self._id,
-                            None)
-                        return
-                except Exception as exc:
-                    error = exc
-                    LOG.error(
-                        'Client.send.until_send_complete',
-                        self._id,
-                        error)
-                    # Error condition so won't retry send remove from list of
-                    # unsent
-                    if local_message_id in self._outstanding_sends:
-                        self._outstanding_sends.remove(local_message_id)
-                    # An error here could still mean the message made it over
-                    # so we only care about at least once messages
-                    if qos == QOS_AT_LEAST_ONCE:
-                        self._queued_sends.append({
-                            'topic': topic,
-                            'data': data,
-                            'options': options,
-                            'callback': callback
-                        })
+                            error)
 
-                    def next_tick():
-                        """
-                        next_tick
-                        """
-                        if send_callback:
-                            if qos == QOS_AT_MOST_ONCE:
-                                # we don't know if an at most once message made
-                                # it across call the callback with an err of
-                                # None to indicate success to avoid the user
-                                # resending on error.
-                                LOG.entry(
-                                    'Client.send.until_send_complete.next_tick',
-                                    self._id)
-                                send_callback(
-                                    err,
-                                    topic,
-                                    msg.body,
-                                    options)
-                                LOG.exit(
-                                    'Client.send.until_send_complete.next_tick',
-                                    self._id,
-                                    None)
-                        if error:
-                            LOG.emit(
-                                'Client.send.until_send_complete.next_tick',
-                                self._id,
-                                ERROR,
-                                error)
-                            self._emit(ERROR, error)
-                            if _should_reconnect(error):
+                        # Error so empty the outstanding_sends array
+                        while len(self._outstanding_sends) > 0:
+                            in_flight = self._outstanding_sends.pop(0)
+                            if in_flight['qos'] == QOS_AT_LEAST_ONCE:
+                                # Retry AT_LEAST_ONCE messages
+                                self._queued_sends.append({
+                                    'topic': in_flight['topic'],
+                                    'data': in_flight['msg'].body,
+                                    'options': in_flight['options'],
+                                    'callback': in_flight['callback']
+                                })
+                            else:
+                                # we don't know if an at-most-once message made
+                                # it across. Call the callback with an err of
+                                # null to indicate success otherwise the
+                                # application could decide to resend (duplicate)
+                                # the message
+                                if in_flight['callback']:
+                                    LOG.entry(
+                                        'Client.send.send_outbound_msg.cb2',
+                                        self._id)
+                                    try:
+                                        in_flight['callback'](
+                                            None,
+                                            in_flight['topic'],
+                                            in_flight['msg'].body,
+                                            options)
+                                    except Exception as exc:
+                                        LOG.error(
+                                            'Client.send.send_outbound_msg.cb2',
+                                            self._id,
+                                            exc)
+                                        if callback_error is None:
+                                            callback_error = exc
+                                    LOG.exit(
+                                        'Client.send.send_outbound_msg.cb2',
+                                        self._id,
+                                        None)
+
+                                if error:
+                                    LOG.emit(self._id, ERROR, error)
+                                    self._emit(ERROR, error)
+                                    do_reconnect |= _should_reconnect(error)
+
+                                #del in_flight['msg']
+
+                            if do_reconnect:
                                 self._reconnect()
-
-                    timer = threading.Timer(1, next_tick)
-                    timer.start()
-                LOG.exit_often(
-                    'Client.send.until_send_complete',
-                    self._id,
-                    None)
-            # start the timer to trigger it to keep sending until msg has sent
-            until_send_complete(msg, local_message_id, callback)
+                            """
+                            if callback_error is not None:
+                                LOG.error(
+                                    'Client.send.send_outbound_msg',
+                                    self._id,
+                                    callback_error)
+                                raise callback_error
+                            """
+                    LOG.exit(
+                        'Client.send.send_outbound_msg',
+                        self._id,
+                        None)
+                send_outbound_msg()
 
             # If we have a backlog of messages, then record the need to emit a
             # drain event later to indicate the backlog has been cleared
@@ -1919,11 +2135,13 @@ class Client(object):
                 self._drain_event_required = True
 
         except Exception as exc:
-            err = mqlex.MQLightError(exc)
+            err = mqlexc.MQLightError(exc)
             LOG.error('Client.send', self._id, err)
-            if local_message_id:
-                if local_message_id in self._outstanding_sends:
-                    self._outstanding_sends.remove(local_message_id)
+
+            # Error condition so won't retry send need to remove it from list
+            # of unsent
+            if in_outstanding_sends:
+                self._outstanding_sends.pop(0)
 
             if qos == QOS_AT_LEAST_ONCE:
                 self._queued_sends.append({
@@ -1933,22 +2151,46 @@ class Client(object):
                     'callback': callback
                 })
 
-            def next_tick():
-                """
-                next_tick
-                """
-                if callback:
-                    if self.get_state() in (STOPPED, STOPPING):
-                        LOG.entry('Client.send.next_tick', self._id)
-                        callback(err, msg)
-                        LOG.exit('Client.send.next_tick', self._id, None)
+            # Reconnect can result in many callbacks being fired in a single
+            # tick, group these together into a single setImmediate - to avoid
+            # them being spread out over a, potentially, long period of time.
+            if len(self._queued_send_callbacks) == 0:
+                def immediate():
+                    do_reconnect = False
+                    while len(self._queued_send_callbacks) > 0:
+                        invocation = self._queued_send_callbacks.pop(0)
+                        if invocation['callback']:
+                            if invocation['qos'] == QOS_AT_MOST_ONCE:
+                                LOG.entry('Client.send.callback', NO_CLIENT_ID)
+                                invocation['callback'](
+                                    invocation['error'],
+                                    invocation['topic'],
+                                    invocation['body'],
+                                    invocation['options'])
+                                LOG.exit(
+                                    'Client.send.callback',
+                                    NO_CLIENT_ID,
+                                    None)
+                        LOG.emit(
+                            'Client.send',
+                            self._id,
+                            ERROR,
+                            invocation['error'])
+                        self._emit(ERROR, invocation['error'])
+                        do_reconnect |= _should_reconnect(invocation['error'])
+                    if do_reconnect:
+                        self._reconnect()
+                timer = threading.Timer(0.5, immediate)
+                timer.start()
 
-                LOG.emit('Client.send.next_tick', self._id, ERROR, err)
-                self._emit(ERROR, err)
-                if _should_reconnect(err):
-                    self._reconnect()
-            timer = threading.Timer(1, next_tick)
-            timer.start()
+            self._queued_send_callbacks.append({
+                'body': msg.body,
+                'callback': callback,
+                'error': err,
+                'options': options,
+                'qos': qos,
+                'topic': topic
+            })
 
         LOG.exit('Client.send', self._id, next_message)
         return next_message
@@ -1970,12 +2212,18 @@ class Client(object):
             options:
             callback: function to call when the subscription is done
         Raises:
-            TypeError, mqlex.InvalidArgumentError: if any argument is invalid
-            mqlex.StoppedError: if the client is disconnected
+            TypeError, mqlexc.InvalidArgumentError: if any argument is invalid
+            mqlexc.StoppedError: if the client is disconnected
         """
         LOG.entry('Client.subscribe', self._id)
+        # If client has been replaced then throw a ReplacedError
+        if self.state == REPLACED:
+            err = mqlexc.LocalReplacedError()
+            LOG.error('Client.send', self._id, err)
+            raise err
+
         if topic_pattern is None or topic_pattern == '':
-            raise mqlex.InvalidArgumentError(
+            raise mqlexc.InvalidArgumentError(
                 'Cannot subscribe to an empty pattern')
 
         topic_pattern = str(topic_pattern)
@@ -1991,7 +2239,7 @@ class Client(object):
         elif callback is None:
             if hasattr(options, '__call__'):
                 callback = options
-                if not isinstance(share, str):
+                if isinstance(share, dict):
                     options = share
                     share = None
                 else:
@@ -2002,7 +2250,7 @@ class Client(object):
         if share:
             share = str(share)
             if ':' in share:
-                raise mqlex.InvalidArgumentError(
+                raise mqlexc.InvalidArgumentError(
                     'share argument value ' + share +
                     ' is invalid because it contains a colon character')
             share = 'share:' + share + ':'
@@ -2022,17 +2270,17 @@ class Client(object):
         credit = 1024
         if options:
             if 'qos' in options:
-                if options['qos'] in (QOS_AT_MOST_ONCE, QOS_AT_LEAST_ONCE):
+                if options['qos'] in QOS:
                     qos = options['qos']
                 else:
-                    raise mqlex.InvalidArgumentError(
+                    raise mqlexc.InvalidArgumentError(
                         'options[\'qos\'] value ' + str(options['qos']) +
                         ' is invalid must evaluate to 0 or 1')
             if 'auto_confirm' in options:
                 if options['auto_confirm'] in (True, False):
                     auto_confirm = options['auto_confirm']
                 else:
-                    raise mqlex.InvalidArgumentError(
+                    raise mqlexc.InvalidArgumentError(
                         'options[\'auto_confirm\'] value ' +
                         str(options['auto_confirm']) +
                         ' is invalid must evaluate to True or False')
@@ -2043,7 +2291,7 @@ class Client(object):
                         raise TypeError()
                 except Exception as err:
                     raise TypeError(
-                        'options[\'ttl value\'] ' + str(options['ttl']) +
+                        'options[\'ttl\'] value ' + str(options['ttl']) +
                         ' is invalid must be an unsigned integer number')
             if 'credit' in options:
                 try:
@@ -2062,14 +2310,14 @@ class Client(object):
 
         # Ensure we have attempted a connect
         if self.is_stopped():
-            raise mqlex.StoppedError('not started')
+            raise mqlexc.StoppedError('not started')
 
         # Subscribe using the specified pattern and share options
         address = self.get_service() + '/' + share + topic_pattern
         subscription_address = self.get_service() + '/' + topic_pattern
 
         # If client is in the retrying state, then queue this subscribe request
-        if self.get_state() == RETRYING or self.get_state() == STARTING:
+        if self.state in (RETRYING, STARTING):
             LOG.data(
                 self._id,
                 'Client waiting for connections so queued subscription')
@@ -2093,11 +2341,11 @@ class Client(object):
 
         err = None
         # if we already believe this subscription exists, we should reject the
-        # request to subscribe by throwing a mqlex.SubscribedError
+        # request to subscribe by throwing a mqlexc.SubscribedError
         for sub in self._subscriptions:
             if sub['address'] == subscription_address and sub[
                     'share'] == original_share_value:
-                err = mqlex.SubscribedError(
+                err = mqlexc.SubscribedError(
                     'client is already subscribed to this address')
                 LOG.error('Client.subscribe', self._id, err)
                 raise err
@@ -2106,7 +2354,7 @@ class Client(object):
                 self._messenger.subscribe(address, qos, ttl, credit)
             except Exception as exc:
                 LOG.error('Client.subscribe', self._id, exc)
-                err = mqlex.MQLightError(exc)
+                err = mqlexc.MQLightError(exc)
 
         if callback:
             def next_tick():
@@ -2196,17 +2444,22 @@ class Client(object):
             'message' events on arrival.
 
         Raises:
-            mqlex.InvalidArgumentError: If the topic pattern parameter is
+            mqlexc.InvalidArgumentError: If the topic pattern parameter is
                 undefined.
         """
         LOG.entry('Client.unsubscribe', self._id)
+        # If client has been replaced then throw a ReplacedError
+        if self.state == REPLACED:
+            err = mqlexc.LocalReplacedError()
+            LOG.error('Client.send', self._id, err)
+            raise err
         LOG.parms(self._id, 'topic_pattern:', topic_pattern)
 
         if topic_pattern is None:
-            error = mqlex.InvalidArgumentError(
+            err = mqlexc.InvalidArgumentError(
                 'You must specify a topic_pattern argument')
-            LOG.error('Client.unsubscribe', self._id, error)
-            raise error
+            LOG.error('Client.unsubscribe', self._id, err)
+            raise err
 
         topic_pattern = str(topic_pattern)
 
@@ -2238,7 +2491,7 @@ class Client(object):
         if share:
             share = str(share)
             if ':' in share:
-                error = mqlex.InvalidArgumentError(
+                error = mqlexc.InvalidArgumentError(
                     'share argument value ' +
                     share +
                     ' is invalid because it contains a colon (:) character')
@@ -2257,7 +2510,7 @@ class Client(object):
             else:
                 error = TypeError(
                     'options must be an object type not a ' +
-                    type(options) +
+                    str(type(options)) +
                     ')')
                 LOG.error('Client.unsubscribe', self._id, error)
                 raise error
@@ -2267,10 +2520,10 @@ class Client(object):
             if 'ttl' in options:
                 try:
                     ttl = int(options['ttl'])
-                    if ttl < 0:
-                        raise TypeError()
+                    if ttl != 0:
+                        raise ValueError()
                 except Exception as err:
-                    raise TypeError(
+                    raise ValueError(
                         'options[\'ttl value\'] ' + str(options['ttl']) +
                         ' is invalid must be an unsigned integer number')
 
@@ -2281,7 +2534,7 @@ class Client(object):
 
         # Ensure we have attempted a connect
         if self.is_stopped():
-            err = mqlex.StoppedError('not started')
+            err = mqlexc.StoppedError('not started')
             LOG.error('Client.unsubscribe', self._id, err)
             raise err
 
@@ -2295,7 +2548,6 @@ class Client(object):
                     'share'] == original_share_value:
                 subscribed = True
                 break
-
         if not subscribed:
             for sub in self._queued_subscriptions:
                 if sub['address'] == subscription_address and sub[
@@ -2304,8 +2556,8 @@ class Client(object):
                     break
 
         if not subscribed:
-            err = mqlex.UnsubscribedError(
-                'client is not subscribed to this address')
+            err = mqlexc.UnsubscribedError(
+                'client is not subscribed to this address:' + address)
             LOG.error('Client.unsubscribe', self._id, err)
             raise err
 
@@ -2341,9 +2593,11 @@ class Client(object):
 
         # if client is in the retrying state, then queue this unsubscribe
         # request
-        if self.get_state() == RETRYING or self.get_state() == STARTING:
-            LOG.data(self._id, 'client still in the process of connecting ' +
-                     'so queueing the unsubscribe request')
+        if self.state in (RETRYING, STARTING):
+            LOG.data(
+                self._id,
+                'client still in the process of connecting ' +
+                'so queueing the unsubscribe request')
             queue_unsubscribe()
             LOG.exit('Client.unsubscribe', self._id, self)
             return self
@@ -2356,7 +2610,7 @@ class Client(object):
             if callback:
                 def next_tick():
                     LOG.entry('Client.unsubscribe.callback', self._id)
-                    callback(None)
+                    callback(None, topic_pattern, original_share_value)
                     LOG.exit('Client.unsubscribe.callback', self._id, None)
                 timer = threading.Timer(1, next_tick)
                 timer.start()

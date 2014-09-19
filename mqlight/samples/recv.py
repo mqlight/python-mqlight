@@ -1,16 +1,60 @@
+"""
+<copyright
+notice="lm-source-program"
+pids="5725-P60"
+years="2013,2014"
+crc="3568777996" >
+Licensed Materials - Property of IBM
+
+5725-P60
+
+(C) Copyright IBM Corp. 2013, 2014
+
+US Government Users Restricted Rights - Use, duplication or
+disclosure restricted by GSA ADP Schedule Contract with
+IBM Corp.
+</copyright>
+"""
 import argparse
 import time
-from mqlight import *
+import mqlight
+import threading
 
 id = 'recv.py'
 hostname = 'localhost'
 port = 5672
 
-parser = argparse.ArgumentParser(description='Connect to an MQLight broker and subscribe to the specified topic.')
-parser.add_argument('topic', type=str, nargs='?', default='public', help='topic')
-parser.add_argument('-a', '--address', dest='address', type=str, default='amqp://' + hostname + ':' + str(port), help='address of the MQLight broker (default: amqp://' + hostname + ':' + str(port) + ')')
-parser.add_argument('-m', '--max', dest='maxmsg', type=int, default=10, help='maximum number of message to receive (default: 10)')
-parser.add_argument('-t', '--timeout', dest='timeout', type=int, default=60, help='maximum number of seconds to wait for messages (default: 60)')
+parser = argparse.ArgumentParser(
+    description='Connect to an MQLight broker and subscribe to the ' + \
+    'specified topic.')
+parser.add_argument(
+    'topic',
+    type=str,
+    nargs='?',
+    default='public',
+    help='topic')
+parser.add_argument(
+    '-a',
+    '--address',
+    dest='address',
+    type=str,
+    default='amqp://' + hostname + ':' + str(port),
+    help='address of the MQLight broker (default: amqp://' + hostname + \
+    ':' + str(port) + ')')
+parser.add_argument(
+    '-m',
+    '--max',
+    dest='maxmsg',
+    type=int,
+    default=10,
+    help='maximum number of message to receive (default: 10)')
+parser.add_argument(
+    '-t',
+    '--timeout',
+    dest='timeout',
+    type=int,
+    default=60,
+    help='maximum number of seconds to wait for messages (default: 60)')
 args = parser.parse_args()
 
 topic = args.topic
@@ -32,7 +76,7 @@ def subscribe(err):
         print 'error while subscribing ', err
     print 'Connected to ' + address + ' using client-id ' + client.get_id()
     print 'Subscribing to: ' + topic
-    client.add_listener(MESSAGE, message)
+    client.add_listener(mqlight.MESSAGE, message)
     client.subscribe(topic, subscribed)
     t = threading.Timer(timeout, timedout)
     t.start()
@@ -51,12 +95,11 @@ def message(data, delivery):
     global count
     count += 1
     print '# received message ' + str(count)
-    print 'data ' , data
+    print 'data ', data
     print 'delivery ', delivery
     if count == maxmsg:
         print 'Received the maximum number of messages, disconnecting ...'
         client.stop()
 
-
-client = Client(address, id)
-client.add_listener(STARTED, subscribe)
+client = mqlight.Client(address, id)
+client.add_listener(mqlight.STARTED, subscribe)

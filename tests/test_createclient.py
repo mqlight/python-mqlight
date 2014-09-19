@@ -1,3 +1,20 @@
+"""
+<copyright
+notice="lm-source-program"
+pids="5725-P60"
+years="2013,2014"
+crc="3568777996" >
+Licensed Materials - Property of IBM
+
+5725-P60
+
+(C) Copyright IBM Corp. 2013, 2014
+
+US Government Users Restricted Rights - Use, duplication or
+disclosure restricted by GSA ADP Schedule Contract with
+IBM Corp.
+</copyright>
+"""
 import unittest
 import re
 import inspect
@@ -135,6 +152,9 @@ class TestCreateClient(unittest.TestCase):
             'amqp://localhost:5672',
             'id',
             { 'property_user': 'username', 'property_password': 's3cret' })
+        print str(inspect.getmembers(
+                    client,
+                    lambda a:not(inspect.isroutine(a))))
         self.assertEqual(
             None,
             re.search(
@@ -170,7 +190,7 @@ class TestCreateClient(unittest.TestCase):
 
     def test_bad_ssl_options(self):
         """
-        Test that bad ssl options cause createClient to fail
+        Test that bad ssl options cause Client to fail
         """
         data = [
             { 'ssl_trust_certificate': 1, 'ssl_verify_name': True },
@@ -182,7 +202,7 @@ class TestCreateClient(unittest.TestCase):
             },
             {
                 'ssl_trust_certificate': 'ValidCertificate',
-                'ssl_verify_name': 1
+                'ssl_verify_name': '1'
             },
             {
                 'ssl_trust_certificate': 'ValidCertificate',
@@ -284,12 +304,12 @@ class TestCreateClient(unittest.TestCase):
                 'ssl_verify_name': False
             },
             {
-                'ssl_trust_certificate': 'BadVerify',
+                'ssl_trust_certificate': 'BadVerify2',
                 'ssl_verify_name': True
             }
         ]
-        bad_certificate_fd = open('BadCertificate', 'w')
-        bad_verify_fd = open('BadVerify', 'w')
+        bad_certificate_fd = open('BadCertificate', 'w+')
+        bad_verify_fd = open('BadVerify2', 'w+')
         self.count = 0
         def valid_ssl_test(ssl_trust_certificate, ssl_verify_name):
             service = 'amqp://host'
@@ -307,7 +327,7 @@ class TestCreateClient(unittest.TestCase):
                     bad_certificate_fd.close()
                     os.remove('BadCertificate')
                     bad_verify_fd.close()
-                    os.remove('BadVerify')
+                    os.remove('BadVerify2')
                 else:
                     valid_ssl_test(
                         data[self.count]['ssl_trust_certificate'],
@@ -321,7 +341,7 @@ class TestCreateClient(unittest.TestCase):
                 bad_certificate_fd.close()
                 os.remove('BadCertificate')
                 bad_verify_fd.close()
-                os.remove('BadVerify')
+                os.remove('BadVerify2')
             client.add_listener(mqlight.STARTED, started)
 
         valid_ssl_test(
