@@ -19,7 +19,6 @@ import unittest
 import re
 import inspect
 import os
-from mock import Mock, patch
 import mqlight
 import mqlightexceptions as mqlexc
 
@@ -139,7 +138,7 @@ class TestCreateClient(unittest.TestCase):
                     security_options)
                 self.assertTrue(i['valid'], i)
                 client.stop()
-            except Exception as exc:
+            except Exception:
                 self.assertFalse(i['valid'], i)
 
     @unittest.expectedFailure
@@ -228,7 +227,12 @@ class TestCreateClient(unittest.TestCase):
                 security_options = data[i]
                 mqlight.Client(service, client_id, security_options)
             err_type = type(err.exception)
-            self.assertTrue(err_type in (TypeError, mqlexc.SecurityError, mqlexc.InvalidArgumentError), 'errtype is ' + str(err_type))
+            self.assertTrue(
+                err_type in (
+                    TypeError,
+                    mqlexc.SecurityError,
+                    mqlexc.InvalidArgumentError),
+                    'errtype is ' + str(err_type))
         if os.path.exists('dirCertificate'):
             os.rmdir('dirCertificate')
 
@@ -347,6 +351,64 @@ class TestCreateClient(unittest.TestCase):
         valid_ssl_test(
             data[self.count]['ssl_trust_certificate'],
             data[self.count]['ssl_verify_name'])
+
+    def test_create_client_multiple_with_same_id(self):
+        """
+        Test that, calling Client a second time with the same id is
+        successful, replacing (invalidating) the previous instance.
+        """
+        opts_a = { 'service': 'amqp://localhost', 'id': 'Aname' }
+        opts_b = { 'service': 'amqp://localhost', 'id': 'Bname' }
+
+        client_a = mqlight.Client(opts_a['service'], opts_a['id'])
+        def client_a_start(err):
+            client_b1 = mqlight.Client(opts_b['service'], opts_b['id'])
+            self.client_b1_stopped = False
+            def client_b1_stop(err):
+                self.assertEqual(None, err)
+                self.client_b1_stopped = True
+            client_b1.add_listener(mqlight.STOPPED, client_b1_stop)
+            self.first_time = True
+            def client_b1_start(err):
+                if not self.first_time:
+                    return
+                self.first_time = False
+                self.assertEqual(None, err)
+                client_b2 = mqlight.Client(opts_b['service'], opts_b['id'])
+                def client_b2_start(err):
+                    self.assertEqual(None, err)
+                    self.assertTrue(self.client_b1_stopped)
+                    self.assertEqual(mqlight.STARTED, client_a.get_state())
+                    self.assertEqual(mqlight.STOPPED, client_b1.get_state())
+                    self.assertEqual(mqlight.STARTED, client_b2.get_state())
+
+                    def client_b1_start_callback(err):
+                        self.assertEqual(None, err)
+                        self.assertEqual(mqlight.STARTED, client_a.get_state())
+                        self.assertEqual(mqlight.STARTED, client_b1.get_state())
+                        self.assertEqual(mqlight.STOPPED, client_b2.get_state())
+
+                        def client_a_stop_callback(err):
+                            def client_b1_stop_callback(err):
+                                self.assertTrue(True)
+                            client_b1.stop(client_b1_stop_callback)
+                        client_a.stop(client_a_stop_callback)
+                    client_b1.start(client_b1_start_callback)
+
+                client_b2.add_listener(mqlight.STARTED, client_b2_start)
+                def client_b1_error(err):
+                    self.assertTrue(
+                        'ReplacedError' in str(type(err)),
+                        'expected a ReplacedError')
+                client_b1.add_listener(mqlight.ERROR, client_b1_error)
+                def client_b2_error(err):
+                    self.assertTrue(
+                        'ReplacedError' in str(type(err)),
+                        'expected a ReplacedError')
+                client_b2.add_listener(mqlight.ERROR, client_b2_error)
+            client_b1.add_listener(mqlight.STARTED, client_b1_start)
+        client_a.add_listener(mqlight.STARTED, client_a_start)
+
 
 if __name__ == 'main':
     unittest.main()

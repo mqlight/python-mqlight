@@ -15,8 +15,8 @@ disclosure restricted by GSA ADP Schedule Contract with
 IBM Corp.
 </copyright>
 """
-import proton
 import cproton
+import ast
 import mqlightexceptions as mqlexc
 import os
 from mqlightlog import get_logger, NO_CLIENT_ID
@@ -26,6 +26,8 @@ LOG = get_logger(__name__)
 
 QOS_AT_MOST_ONCE = 0
 QOS_AT_LEAST_ONCE = 1
+STATUSES = [ 'UNKNOWN', 'PENDING', 'ACCEPTED', 'REJECTED', 'RELEASED',
+    'MODIFIED', 'ABORTED', 'SETTLED' ]
 
 class _MQLightMessage(object):
 
@@ -41,48 +43,68 @@ class _MQLightMessage(object):
         if message:
             LOG.parms(NO_CLIENT_ID, 'message:', message)
             self._msg = message
+            self._body = None
+            self._body = self._get_body()
         else:
             self._msg = cproton.pn_message()
+            self._body = None
         self._tracker = None
         self._link_address = None
         self.connection_id = None
-        self._body = None
         LOG.exit('_MQLightMessage.constructor', NO_CLIENT_ID, None)
 
-    def pre_encode(self):
+    def _set_body(self, value):
         """
         Handles body data type and encoding
         """
-        LOG.entry('_MQLightMessage.pre_encode', NO_CLIENT_ID)
-        body = proton.Data(cproton.pn_message_body(self.message))
-        body.clear()
-        if self._body is not None:
-            body.put_object(self._body)
-        LOG.exit('_MQLightMessage.pre_encode', NO_CLIENT_ID, None)
-
-    def post_decode(self):
-        """
-        Handles body data type and encoding
-        """
-        LOG.entry('_MQLightMessage.post_decode', NO_CLIENT_ID)
-        body = proton.Data(cproton.pn_message_body(self.message))
-        if body.next():
-            self._body = body.get_object()
-        else:
-            self._body = None
-        LOG.exit('_MQLightMessage.post_decode', NO_CLIENT_ID, None)
-
-    def _set_body(self, body):
-        """
-        Sets the message body
-        """
-        self._body = body
+        LOG.entry('_MQLightMessage._set_body', NO_CLIENT_ID)
+        LOG.parms(NO_CLIENT_ID, 'value:', value)
+        if self._msg:
+            if type(value) in (unicode, str):
+                LOG.data(NO_CLIENT_ID, 'setting the body format as text')
+                cproton.pn_message_set_format(self._msg, cproton.PN_TEXT)
+                cproton.pn_message_load_text(self._msg, str(value))
+            else:
+                LOG.data(NO_CLIENT_ID, 'setting the body format as data')
+                cproton.pn_message_set_format(self._msg, cproton.PN_DATA)
+                cproton.pn_message_load_data(self._msg, str(value))
+            self._body = self._get_body()
+            LOG.data(NO_CLIENT_ID, 'body:', self._body)
+        LOG.exit('_MQLightMessage._set_body', NO_CLIENT_ID, None)
 
     def _get_body(self):
         """
-        Gets the message body
+        Handles body data type and encoding
         """
-        return self._body
+        LOG.entry('_MQLightMessage._get_body', NO_CLIENT_ID)
+        result = None
+        if self._msg:
+            if self._body is None:
+                body = cproton.pn_message_body(self._msg)
+                # inspect data to see if we have PN_STRING data
+                cproton.pn_data_next(body)
+                data_type = cproton.pn_data_type(body)
+                if data_type == cproton.PN_STRING:
+                    cproton.pn_message_set_format(self._msg, cproton.PN_TEXT)
+                else:
+                    cproton.pn_message_set_format(self._msg, cproton.PN_DATA)
+
+                size = 16
+                while True:
+                    err, result = cproton.pn_message_save(self._msg, size)
+                    if err == cproton.PN_OVERFLOW:
+                        size *= 2
+                        continue
+                    else:
+                        break
+                if data_type == cproton.PN_STRING:
+                    result = str(result)
+                else:
+                    result = ast.literal_eval(result)
+            else:
+                result = self._body
+        LOG.exit('_MQLightMessage._get_body', NO_CLIENT_ID, result)
+        return result
 
     body = property(_get_body, _set_body)
 
@@ -544,7 +566,6 @@ class _MQLightMessenger(object):
 
         LOG.data(NO_CLIENT_ID, 'msg:', msg.message)
         LOG.data(NO_CLIENT_ID, 'body:', msg.body)
-        msg.pre_encode()
         cproton.pn_messenger_put(self.messenger, msg.message)
         error = cproton.pn_messenger_errno(self.messenger)
         if error:
@@ -632,17 +653,26 @@ class _MQLightMessenger(object):
                         self.messenger))
                 _MQLightMessenger._raise_error(text)
             msg = _MQLightMessage(message)
-            msg.post_decode()
             tracker = cproton.pn_messenger_incoming_tracker(self.messenger)
             msg.tracker = tracker
-            link_address = cproton.pn_messenger_tracker_link(
+            link = cproton.pn_messenger_tracker_link(
                 self.messenger,
                 tracker)
-            if link_address:
-                msg.link_address = cproton.pn_terminus_get_address(
-                    cproton.pn_link_remote_target(link_address))
-            messages.append(msg)
-            cproton.pn_messenger_accept(self.messenger, tracker, 0)
+            if link:
+                if (cproton.pn_link_state(link) & cproton.PN_LOCAL_CLOSED):
+                    LOG.data(
+                        NO_CLIENT_ID,
+                        'Link closed so ignoring received message for ' + \
+                        'address: ' + cproton.pn_message_get_address(message))
+                else:
+                    msg.link_address = cproton.pn_terminus_get_address(
+                        cproton.pn_link_remote_target(link))
+                    messages.append(msg)
+            else:
+                LOG.data(
+                    NO_CLIENT_ID,
+                    'No link associated with received message tracker for ' + \
+                    'address: ' + cproton.pn_message_get_address(message))
         LOG.exit('_MQLightMessenger.receive', NO_CLIENT_ID, messages)
         return messages
 
@@ -656,9 +686,14 @@ class _MQLightMessenger(object):
         if self.messenger is None:
             raise mqlexc.NetworkError('Not connected')
 
+        tracker = message.tracker
+        delivery = cproton.pn_messenger_delivery(self.messenger, tracker)
+        tag = cproton.pn_delivery_tag(delivery)
+        if len(tag) * 4 > 128:
+            raise mqlexc.MQLightError('Delivery tag larger than expected.')
         status = cproton.pn_messenger_settle(
             self.messenger,
-            message.tracker,
+            tracker,
             0)
         error = cproton.pn_messenger_errno(self.messenger)
         if error:
@@ -668,6 +703,7 @@ class _MQLightMessenger(object):
             _MQLightMessenger._raise_error(text)
         elif status != 0:
             raise mqlexc.NetworkError('Failed to settle')
+
         LOG.exit('_MQLightMessenger.settle', NO_CLIENT_ID, True)
         return True
 
@@ -706,10 +742,7 @@ class _MQLightMessenger(object):
         tracker = message.tracker
         disp = cproton.pn_messenger_status(self.messenger, tracker)
         LOG.data(NO_CLIENT_ID, 'status:', str(disp))
-        if disp == 0:
-            status = 'UNKNOWN'
-        else:
-            status = proton.STATUSES.get(disp, disp)
+        status = STATUSES[disp]
         LOG.exit('_MQLightMessenger.status', NO_CLIENT_ID, status)
         return status
 
@@ -800,14 +833,16 @@ class _MQLightMessenger(object):
             cproton.pn_terminus_set_timeout(cproton.pn_link_source(link), ttl)
 
         cproton.pn_link_close(link)
-        cproton.pn_messenger_work(self.messenger, 50)
-        error = cproton.pn_messenger_errno(self.messenger)
-        LOG.data(NO_CLIENT_ID, 'error:', error)
-        if error:
-            text = cproton.pn_error_text(
-                cproton.pn_messenger_error(
-                    self.messenger))
-            _MQLightMessenger._raise_error(text)
+
+        while (not (cproton.pn_link_state(link) & cproton.PN_REMOTE_CLOSED)):
+            cproton.pn_messenger_work(self.messenger, 50)
+            error = cproton.pn_messenger_errno(self.messenger)
+            LOG.data(NO_CLIENT_ID, 'error:', error)
+            if error:
+                text = cproton.pn_error_text(
+                    cproton.pn_messenger_error(
+                        self.messenger))
+                _MQLightMessenger._raise_error(text)
 
         LOG.exit('_MQLightMessenger.Unsubscribe', NO_CLIENT_ID, True)
         return True

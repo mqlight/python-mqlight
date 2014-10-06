@@ -67,8 +67,7 @@ STATES = (
     STARTING,
     STOPPED,
     STOPPING,
-    RETRYING,
-    REPLACED
+    RETRYING
 )
 
 QOS = (
@@ -670,20 +669,25 @@ class Client(object):
                 self._security_options)
 
         # Check that the id for this instance is not already in use. If it is
-        # then we need to replace the previous instance and set its state to
-        # 'replaced'
+        # then we need to stop the active instance before starting
         if ACTIVE_CLIENTS.has(self._id):
-            previous_client = ACTIVE_CLIENTS.get(self._id)
+            LOG.data(
+                self._id,
+                'stopping previously active client with same client id')
+            previous_active_client = ACTIVE_CLIENTS.get(self._id)
             ACTIVE_CLIENTS.add(self)
             def stop_callback(err):
-                previous_client._set_state(REPLACED)
-                LOG.data(self._id, 'Previous client instance replaced')
+                LOG.data(
+                    self._id,
+                    'stopped previously active client with same client id')
+                err = mqlexc.LocalReplacedError()
+                LOG.emit('Client.constructor', self._id, ERROR, err)
+                previous_active_client._emit(ERROR, err)
                 def connect_callback(err):
                     if callback:
                         callback(err, self)
                 self._perform_connect(connect_callback, service, True)
-            previous_client.stop(stop_callback)
-
+            previous_active_client.stop(stop_callback)
         else:
             ACTIVE_CLIENTS.add(self)
             def connect_callback(err):
@@ -700,12 +704,28 @@ class Client(object):
         LOG.parms(NO_CLIENT_ID, 'callback:', callback)
         LOG.parms(NO_CLIENT_ID, 'service:', service)
         LOG.parms(NO_CLIENT_ID, 'new_client:', new_client)
-        if self.state == REPLACED:
-            err = mqlexc.LocalReplacedError()
+
+        # If there is no active client (i.e. we've been stopped) then add
+        # ourselves back to the active list. Otherwise if there is another
+        # active client (that's replaced us) then exit function now
+        active_client = ACTIVE_CLIENTS.get(self._id)
+        if active_client is None:
+            LOG.data(
+                self._id,
+                'Adding client to active list, as there is no currently ' + \
+                'active client')
+            ACTIVE_CLIENTS.add(self)
+        elif self != active_client:
+            LOG.data(
+                self._id,
+                'Not connecting because client has been replaced')
             if callback:
+                err = mqlexc.LocalReplacedError()
+                LOG.entry('Client._perform_connect.callback', self._id)
                 callback(err)
+                LOG.exit('Client.perform_connect.callback', self._id, None)
             LOG.exit('Client._perform_connect', self._id, None)
-            return None
+            return
 
         if not new_client:
             current_state = self.state
@@ -990,20 +1010,20 @@ class Client(object):
         contents of any that have arrived to the client event emitter.
         """
         LOG.entry_often('Client._check_for_messages', self._id)
-        if self.state != STARTED or len(
+        if self.get_state() != STARTED or len(
                 self._subscriptions) == 0 or MESSAGE not in self._callbacks:
+            print 'exiting check for messages'
             LOG.exit_often('Client._check_for_messages', self._id, None)
             return
-        #try:
-        messages = self._messenger.receive(50)
-        if messages and len(messages) > 0:
-            LOG.debug(self._id, 'received ' +
-                      str(len(messages)) +
-                      ' messages')
-            for message in range(len(messages)):
-                LOG.debug(self._id, 'processing message ' + str(message))
-                self._process_message(messages[message])
-        """
+        try:
+            messages = self._messenger.receive(50)
+            if messages and len(messages) > 0:
+                LOG.debug(self._id, 'received ' +
+                          str(len(messages)) +
+                          ' messages')
+                for message in range(len(messages)):
+                    LOG.debug(self._id, 'processing message ' + str(message))
+                    self._process_message(messages[message])
         except Exception as exc:
             LOG.error('Client._check_for_messages', self._id, exc)
 
@@ -1014,10 +1034,13 @@ class Client(object):
                     self._reconnect()
             timer = threading.Timer(1, next_tick)
             timer.start()
-        """
-        if self.state == STARTED:
+
+        if self.get_state() == STARTED:
+            print 'queueing check for message'
             timer = threading.Timer(0.2, self._check_for_messages)
             timer.start()
+        else:
+            print 'end pof check for messages'
 
         LOG.exit_often('Client._check_for_messages', self._id, None)
 
@@ -1047,21 +1070,19 @@ class Client(object):
             address_no_service = item['address'][len(self._service) + 1:]
             # Possible to have 2 matches work out whether this is
             # for a share or private topic
-            if item['share'] is None and 'private:' in msg.link_address:
-                link_no_priv_share = msg.link_address[8:]
-                if address_no_service == link_no_priv_share:
-                    return True
-            elif item['share'] and 'share:' in msg.link_address:
-                # Starting after the share: look for the next :
-                # denoting the end of the share name and get
-                # everything past that
-                link_no_share = msg.link_address[
-                    msg.link_address.index(':', 7) +
-                    1:]
-                if address_no_service == link_no_share:
-                    return True
-                else:
-                    return False
+            link_address = None
+            if item['share'] is None and 'private:' in msg.link_address and msg.link_address.index('private:') == 0:
+                # Slice off 'private:' prefix
+                link_address = msg.link_address[8:]
+            elif item['share'] and 'share:' in msg.link_address and msg.link_address.index('share:') == 0:
+                # Starting after the share: look for the next : denoting the
+                # end of the share name and get everything past that
+                link_address = msg.link_address[
+                    msg.link_address.index(':', 7) + 1:]
+            if address_no_service == link_address:
+                return True
+            else:
+                return False
 
         matched_subs = [
             sub for sub in self._subscriptions if filter_func(sub)]
@@ -1267,12 +1288,6 @@ class Client(object):
         """
         LOG.entry('Client.stop', self._id)
         LOG.parms(NO_CLIENT_ID, 'callback:', callback)
-
-        # If client has been replaced then throw a ReplacedError
-        if self.state == REPLACED:
-            err = mqlexc.LocalReplacedError()
-            LOG.error('Client.stop', self._id, err)
-            raise err
 
         if (callback and not hasattr(callback, '__call__')):
             raise TypeError('callback must be a function')
@@ -1515,16 +1530,15 @@ class Client(object):
                     self._id,
                     event_to_emit)
                 self._emit(event_to_emit, None)
-            timer = threading.Timer(1, next_tick)
+                if callback:
+                    LOG.entry('Client._connect_to_service.callback2', self._id)
+                    callback(None)
+                    LOG.exit(
+                        'Client._connect_to_service.callback2',
+                        self._id,
+                        None)
+            timer = threading.Timer(0.2, next_tick)
             timer.start()
-
-            if callback:
-                LOG.entry('Client._connect_to_service.callback2', self._id)
-                callback(None)
-                LOG.exit(
-                    'Client._connect_to_service.callback2',
-                    self._id,
-                    None)
 
             # Setup heartbeat timer to ensure that while connected we send
             # heartbeat frames to keep the connection alive, when required
@@ -1622,7 +1636,7 @@ class Client(object):
         self._set_state(RETRYING)
 
         # Stop the messenger to free the object then attempt a reconnect
-        def stop_processing(client):
+        def stop_processing(client, callback=None):
             LOG.entry('Client.reconnect.stop_processing', client._id)
 
             if client._heartbeat_timeout:
@@ -1814,13 +1828,6 @@ class Client(object):
             mqlexc.StoppedError: if the client is disconnected
         """
         LOG.entry('Client.send', self._id)
-
-        # If client has been replaced then throw a ReplacedError
-        if self.state == REPLACED:
-            err = mqlexc.LocalReplacedError()
-            LOG.error('Client.send', self._id, err)
-            raise err
-
         next_message = False
         # Validate the passed parameters
         if topic is None:
@@ -2041,6 +2048,10 @@ class Client(object):
                                         1,
                                         send_outbound_msg)
                                     timer.start()
+                                    LOG.exit('Client.send.send_outbound_msg',
+                                        self._id,
+                                        None)
+                                    return
                         else:
                             # Messenger has been stopped
                             callback_error = None
@@ -2216,12 +2227,6 @@ class Client(object):
             mqlexc.StoppedError: if the client is disconnected
         """
         LOG.entry('Client.subscribe', self._id)
-        # If client has been replaced then throw a ReplacedError
-        if self.state == REPLACED:
-            err = mqlexc.LocalReplacedError()
-            LOG.error('Client.send', self._id, err)
-            raise err
-
         if topic_pattern is None or topic_pattern == '':
             raise mqlexc.InvalidArgumentError(
                 'Cannot subscribe to an empty pattern')
@@ -2448,11 +2453,6 @@ class Client(object):
                 undefined.
         """
         LOG.entry('Client.unsubscribe', self._id)
-        # If client has been replaced then throw a ReplacedError
-        if self.state == REPLACED:
-            err = mqlexc.LocalReplacedError()
-            LOG.error('Client.send', self._id, err)
-            raise err
         LOG.parms(self._id, 'topic_pattern:', topic_pattern)
 
         if topic_pattern is None:
