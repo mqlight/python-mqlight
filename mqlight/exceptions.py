@@ -32,6 +32,13 @@ class InvalidArgumentError(MQLightError):
     """
     pass
 
+class RangeError(MQLightError):
+
+    """
+    A subtype of MQLightError defined by the MQ Light client. The underlying
+    cause for this error are the parameter values passed into a method are not
+    within certain values
+    """
 
 class NetworkError(MQLightError):
 

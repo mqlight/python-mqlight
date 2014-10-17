@@ -26,8 +26,9 @@ LOG = get_logger(__name__)
 
 QOS_AT_MOST_ONCE = 0
 QOS_AT_LEAST_ONCE = 1
-STATUSES = [ 'UNKNOWN', 'PENDING', 'ACCEPTED', 'REJECTED', 'RELEASED',
-    'MODIFIED', 'ABORTED', 'SETTLED' ]
+STATUSES = ['UNKNOWN', 'PENDING', 'ACCEPTED', 'REJECTED', 'RELEASED',
+            'MODIFIED', 'ABORTED', 'SETTLED']
+
 
 class _MQLightMessage(object):
 
@@ -351,7 +352,6 @@ class _MQLightMessenger(object):
         Connects to the specified service
         """
         LOG.entry('_MQLightMessenger.connect', NO_CLIENT_ID)
-        LOG.parms(NO_CLIENT_ID, 'service:', service)
         LOG.parms(
             NO_CLIENT_ID,
             'ssl_trust_certificate:',
@@ -371,6 +371,15 @@ class _MQLightMessenger(object):
             else:
                 ssl_mode = cproton.PN_SSL_VERIFY_PEER
 
+        # If the proton messenger already exists and has been stopped then free
+        # it so that we can recreate a new instance.  This situation can arise
+        # if the messenger link is closed by the remote end instead of a call to
+        # stop()
+        if self.messenger:
+            stopped = cproton.pn_messenger_stopped(self.messenger)
+            if stopped:
+                self.messenger = None
+
         # throw exception if already connected
         if self.messenger:
             raise mqlexc.NetworkError('already connected')
@@ -389,14 +398,24 @@ class _MQLightMessenger(object):
             error = cproton.pn_messenger_set_trusted_certificates(
                 self.messenger,
                 ssl_trust_certificate)
+            LOG.data(
+                NO_CLIENT_ID,
+                'pn_messenger_set_trusted_certificates:',
+                error)
             if error:
+                self.messenger = None
                 err = mqlexc.SecurityError(
                     'Failed to set trusted certificates')
 
         if ssl_mode != cproton.PN_SSL_VERIFY_NULL:
             error = cproton.pn_messenger_set_ssl_peer_authentication_mode(
                 self.messenger, ssl_mode)
+            LOG.data(
+                NO_CLIENT_ID,
+                'pn_messenger_set_ssl_peer_authentication_mode:',
+                error)
             if error:
+                self.messenger = None
                 raise mqlexc.SecurityError(
                     'Failed to set SSL peer authentication mode')
 
@@ -404,12 +423,17 @@ class _MQLightMessenger(object):
         # confirms that it can connect at startup.
         address = urlunparse(service)
         url_protocol = service.scheme
-        port_and_host = service.netloc
-        pattern = url_protocol + '://' + port_and_host
+        host_and_port = service.hostname
+        if service.port:
+            host_and_port += ':' + str(service.port)
+        pattern = url_protocol + '://' + host_and_port + '/*'
         validation_address = address + '/$1'
+        LOG.data(NO_CLIENT_ID, 'pattern:', pattern)
         error = cproton.pn_messenger_route(
             self.messenger, pattern, validation_address)
+        LOG.data(NO_CLIENT_ID, 'pn_messenger_route:', error)
         if error:
+            self.messenger = None
             err = mqlexc.MQLightError('Failed to set messenger route')
             raise err
         # Indicate that the route should be validated
@@ -418,9 +442,11 @@ class _MQLightMessenger(object):
             cproton.PN_FLAGS_CHECK_ROUTES)
         # Start the messenger. This will fail if the route is invalid
         error = cproton.pn_messenger_start(self.messenger)
+        LOG.data(NO_CLIENT_ID, 'pn_messenger_start:', error)
         if error:
             text = cproton.pn_error_text(
                 cproton.pn_messenger_error(self.messenger))
+            self.messenger = None
             _MQLightMessenger._raise_error(text)
         LOG.exit('_MQLightMessenger.connect', NO_CLIENT_ID, None)
 
@@ -662,7 +688,7 @@ class _MQLightMessenger(object):
                 if (cproton.pn_link_state(link) & cproton.PN_LOCAL_CLOSED):
                     LOG.data(
                         NO_CLIENT_ID,
-                        'Link closed so ignoring received message for ' + \
+                        'Link closed so ignoring received message for ' +
                         'address: ' + cproton.pn_message_get_address(message))
                 else:
                     msg.link_address = cproton.pn_terminus_get_address(
@@ -671,7 +697,7 @@ class _MQLightMessenger(object):
             else:
                 LOG.data(
                     NO_CLIENT_ID,
-                    'No link associated with received message tracker for ' + \
+                    'No link associated with received message tracker for ' +
                     'address: ' + cproton.pn_message_get_address(message))
         LOG.exit('_MQLightMessenger.receive', NO_CLIENT_ID, messages)
         return messages
@@ -688,9 +714,6 @@ class _MQLightMessenger(object):
 
         tracker = message.tracker
         delivery = cproton.pn_messenger_delivery(self.messenger, tracker)
-        tag = cproton.pn_delivery_tag(delivery)
-        if len(tag) * 4 > 128:
-            raise mqlexc.MQLightError('Delivery tag larger than expected.')
         status = cproton.pn_messenger_settle(
             self.messenger,
             tracker,
@@ -704,6 +727,30 @@ class _MQLightMessenger(object):
         elif status != 0:
             raise mqlexc.NetworkError('Failed to settle')
 
+        # For incoming messages, if we haven't already settled it, block for a
+        # while until we *think* the settlement disposition has been
+        # communicated over the network. We detect that by querying
+        # pn_transport_quiesced which should return True once all pending
+        # output has been written to the wire.
+        # (as per other comments, ideally we should wrap this in a callback...)
+        is_receiver = cproton.pn_link_is_receiver(
+            cproton.pn_delivery_link(delivery))
+        if delivery is not None and is_receiver:
+            session = cproton.pn_link_session(
+                cproton.pn_delivery_link(delivery))
+            if session:
+                connection = cproton.pn_session_connection(session)
+                if connection:
+                    transport = cproton.pn_connection_transport(connection)
+                    if transport:
+                        while not cproton.pn_transport_quiesced(transport):
+                            cproton.pn_messenger_work(self.messenger, 0)
+                            error = cproton.pn_messenger_errno(self.messenger)
+                            if error:
+                                text = cproton.pn_error_text(
+                                    cproton.pn_messenger_error(
+                                        self.messenger))
+                                _MQLightMessenger._raise_error(text)
         LOG.exit('_MQLightMessenger.settle', NO_CLIENT_ID, True)
         return True
 
@@ -834,15 +881,45 @@ class _MQLightMessenger(object):
 
         cproton.pn_link_close(link)
 
-        while (not (cproton.pn_link_state(link) & cproton.PN_REMOTE_CLOSED)):
-            cproton.pn_messenger_work(self.messenger, 50)
-            error = cproton.pn_messenger_errno(self.messenger)
-            LOG.data(NO_CLIENT_ID, 'error:', error)
-            if error:
-                text = cproton.pn_error_text(
-                    cproton.pn_messenger_error(
-                        self.messenger))
-                _MQLightMessenger._raise_error(text)
+        # Check if we are detaching with @closed=true
+        closed = True
+        expiry_policy = cproton.pn_terminus_get_expiry_policy(
+            cproton.pn_link_target(link))
+        timeout = cproton.pn_terminus_get_timeout(cproton.pn_link_target(link))
+        if expiry_policy == cproton.PN_NEVER or timeout > 0:
+            closed = False
+        LOG.data(NO_CLIENT_ID, 'closed:', closed)
+
+        if closed:
+            while not (cproton.pn_link_state(link) & cproton.PN_REMOTE_CLOSED):
+                cproton.pn_messenger_work(self.messenger, 50)
+                error = cproton.pn_messenger_errno(self.messenger)
+                LOG.data(NO_CLIENT_ID, 'error:', error)
+                if error:
+                    text = cproton.pn_error_text(
+                        cproton.pn_messenger_error(
+                            self.messenger))
+                    _MQLightMessenger._raise_error(text)
+        else:
+            # Otherwise, all we can do is keep calling work until our close
+            # request has been pushed over the network connection as we won't
+            # get an ACK
+            session = cproton.pn_link_session(link)
+            if session:
+                connection = cproton.pn_session_connection(session)
+                if connection:
+                    transport = cproton.pn_connection_transport(connection)
+                    if transport:
+                        while not cproton.pn_transport_quiesced(transport):
+                            cproton.pn_messenger_work(self.messenger, 0)
+                            error = cproton.pn_messenger_errno(self.messenger)
+                            LOG.data(NO_CLIENT_ID, 'error:', error)
+                            if error:
+                                text = cproton.pn_error_text(
+                                    cproton.pn_messenger_error(
+                                        self.messenger))
+                                _MQLightMessenger._raise_error(text)
+
 
         LOG.exit('_MQLightMessenger.Unsubscribe', NO_CLIENT_ID, True)
         return True
@@ -858,7 +935,9 @@ class _MQLightMessenger(object):
             raise mqlexc.NetworkError('Not connected')
 
         result = False
-        pending = cproton.pn_messenger_pending_outbound(self.messenger, address)
+        pending = cproton.pn_messenger_pending_outbound(
+            self.messenger,
+            address)
         if pending < 0:
             raise mqlexc.NetworkError('Not connected')
         elif pending > 0:
