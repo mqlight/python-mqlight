@@ -16,90 +16,171 @@ IBM Corp.
 </copyright>
 """
 import argparse
-import time
 import mqlight
-import threading
+import time
+import uuid
 
-id = 'recv.py'
-hostname = 'localhost'
-port = 5672
+COUNT = 0
+SERVICE = 'amqp://localhost'
 
 parser = argparse.ArgumentParser(
-    description='Connect to an MQLight broker and subscribe to the ' + \
+    description='Connect to an MQ Light server and subscribe to the ' + \
     'specified topic.')
 parser.add_argument(
-    'topic',
+    '-s',
+    '--service',
+    dest='service',
     type=str,
-    nargs='?',
-    default='public',
-    help='topic')
+    default=SERVICE,
+    help='service to connect to, for example: amqp://user:password@host:5672 ' +
+        'or amqps://host:5671 to use SSL/TLS (default: %(default)s)')
 parser.add_argument(
-    '-a',
-    '--address',
-    dest='address',
+    '-c',
+    '--trust-certificate',
+    dest='trust_certificate',
     type=str,
-    default='amqp://' + hostname + ':' + str(port),
-    help='address of the MQLight broker (default: amqp://' + hostname + \
-    ':' + str(port) + ')')
-parser.add_argument(
-    '-m',
-    '--max',
-    dest='maxmsg',
-    type=int,
-    default=10,
-    help='maximum number of message to receive (default: 10)')
+    default=None,
+    help='use the certificate contained in FILE (in PEM or DER format) to ' +
+        'validate the identify of the server. The connection must be secured ' +
+        'with SSL/TLS (e.g. the service URL must start with "amqps://")')
 parser.add_argument(
     '-t',
-    '--timeout',
-    dest='timeout',
+    '--topic-pattern',
+    dest='topic_pattern',
+    type=str,
+    default='public',
+    help='subscribe to receive messages matching TOPIC_PATTERN '+
+        '(default: %(default)s)')
+parser.add_argument(
+    '-i',
+    '--id',
+    dest='client_id',
+    type=str,
+    default=None,
+    help='the ID to use when connecting to MQ Light ' +
+        '(default: send_[0-9a-f]{7})')
+parser.add_argument(
+    '--destination-ttl',
+    dest='destination_ttl',
     type=int,
-    default=60,
-    help='maximum number of seconds to wait for messages (default: 60)')
+    default=None,
+    help='set destination time-to-live to DESTINATION_TTL seconds ' +
+        '(default: %(default)s)')
+parser.add_argument(
+    '-n',
+    '--share-name',
+    dest='share_name',
+    type=str,
+    default=None,
+    help='optionally, subscribe to a shared destination using SHARE_NAME as ' +
+        'the share name.')
+parser.add_argument(
+    '-f',
+    '--file',
+    dest='file',
+    type=str,
+    default=None,
+    help='write the payload of the next message received to FILE ' +
+        '(overwriting previous file contents then end. (default is to print ' +
+        'messages to stdout)')
+parser.add_argument(
+    '-d',
+    '--delay',
+    dest='delay',
+    type=int,
+    default=0,
+    help='delay for DELAY seconds each time a message is received. (default: ' +
+        '%(default)s)')
+parser.add_argument(
+    '--verbose',
+    dest='verbose',
+    type=bool,
+    default=False,
+    help='print additional information about each message. (default: ' +
+        '%(default)s)')
 args = parser.parse_args()
 
-topic = args.topic
-maxmsg = args.maxmsg
-address = args.address
-timeout = args.timeout
-count = 0
+service = args.service
+topic_pattern = args.topic_pattern
+if args.client_id is not None:
+    client_id = args.client_id
+else:
+    client_id = 'send_' + str(uuid.uuid4()).replace('-', '_')[0:7]
+delay = args.delay
+share = args.share_name
+verbose = args.verbose
 
-if maxmsg < 1:
-    print 'The maximum number of message must be a positive number'
-    quit()
-
-if timeout < 0:
-    print 'The timeout must be a positive number'
-    quit()
+security_options = {}
+if args.trust_certificate is not None:
+    security_options['ssl_trust_certificate'] = args.trust_certificate
+    if args.service != SERVICE:
+        if not service.startswith('amqps'):
+            print '*** error ***'
+            print 'The service URL must start with "amqps://" when using a ' + \
+                'trust certificate.'
+            print 'Exiting.'
+            exit(1)
+    else:
+        service = 'amqps://localhost'
 
 def subscribe(err):
-    if err:
-        print 'error while subscribing ', err
-    print 'Connected to ' + address + ' using client-id ' + client.get_id()
-    print 'Subscribing to: ' + topic
+    print 'Connected to ' + client.get_service() + ' using client-id ' + \
+        client.get_id()
+    print 'Subscribing to: ' + topic_pattern
+    options = {
+        'qos': mqlight.QOS_AT_LEAST_ONCE,
+        'auto_confirm': False
+    }
+    if args.destination_ttl is not None:
+        options['destination_ttl'] = args.destination_ttl
+    if args.delay is not None and args.delay > 0:
+        options['credit'] = 1
     client.add_listener(mqlight.MESSAGE, message)
-    client.subscribe(topic, subscribed)
-    t = threading.Timer(timeout, timedout)
-    t.start()
-
-def timedout():
-    print 'Timeout reached, disconnecting'
-    client.stop()
+    client.subscribe(topic_pattern, share, options, subscribed)
 
 def subscribed(err, pattern, share):
     if err is not None:
-        print 'error subscribing ', err
-    else:
-        print 'subscribed to ' + pattern
+        print '*** error ***'
+        print 'problem with subscribe request ', err
+        exit(1)
+    if pattern:
+        if share:
+            print 'Subscribed to share: ' + share + ' pattern: ' + pattern
+        else:
+            print 'Subscribed to pattern: ' + pattern
 
 def message(data, delivery):
-    global count
-    count += 1
-    print '# received message ' + str(count)
-    print 'data ', data
-    print 'delivery ', delivery
-    if count == maxmsg:
-        print 'Received the maximum number of messages, disconnecting ...'
+    global COUNT
+    COUNT += 1
+    if verbose:
+        print '# received message ', COUNT
+    if args.file:
+        print 'Writing message data to ' + args.file
+        with open(args.file, 'wb') as f:
+            f.write(''.join(data))
+        delivery.message.confirm_delivery()
         client.stop()
+    else:
+        print 'data: ', data
+        if verbose:
+            print 'delivery: ', delivery
+        if delay > 0:
+            time.sleep(delay)
+        delivery.message.confirm_delivery()
 
-client = mqlight.Client(address, id)
+def error(err):
+    print '*** error ***'
+    if err:
+        print err
+    print 'Exiting.'
+    exit(1)
+
+def malformed(data, delivery):
+    print '*** received malformed message ***'
+    print 'data: ', data
+    print 'delivery: ', delivery
+
+client = mqlight.Client(service, client_id, security_options)
 client.add_listener(mqlight.STARTED, subscribe)
+client.add_listener(mqlight.ERROR, error)
+client.add_listener(mqlight.MALFORMED, malformed)
