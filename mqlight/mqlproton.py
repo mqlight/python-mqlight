@@ -668,7 +668,7 @@ class _MQLightMessenger(object):
             _MQLightMessenger._raise_error(text)
         messages = []
         count = cproton.pn_messenger_incoming(self.messenger)
-        LOG.data(NO_CLIENT_ID, 'messages count:', str(count))
+        LOG.data(NO_CLIENT_ID, 'messages count: {0}'.format(count))
         message = cproton.pn_message()
         while cproton.pn_messenger_incoming(self.messenger) > 0:
             cproton.pn_messenger_get(self.messenger, message)
@@ -788,7 +788,7 @@ class _MQLightMessenger(object):
 
         tracker = message.tracker
         disp = cproton.pn_messenger_status(self.messenger, tracker)
-        LOG.data(NO_CLIENT_ID, 'status:', str(disp))
+        LOG.data(NO_CLIENT_ID, 'status: ', disp)
         status = STATUSES[disp]
         LOG.exit('_MQLightMessenger.status', NO_CLIENT_ID, status)
         return status

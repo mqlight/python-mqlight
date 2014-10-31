@@ -23,11 +23,13 @@ import sys
 import codecs
 import httplib
 import socket
+import traceback
 from mqlightlog import get_logger, NO_CLIENT_ID
 from json import loads
 from random import random
 from urlparse import urlparse
 from urllib import quote
+from pkg_resources import get_distribution
 import mqlightexceptions as mqlexc
 
 CMD = sys.argv[0].split(' ')
@@ -35,6 +37,8 @@ if 'unittest' in CMD:
     import stubproton as mqlightproton
 else:
     import mqlightproton
+
+__version__ = '1.0.0' #get_distribution('mqlight').version
 
 # Set up logging (to stderr by default). The level of output is
 # configured by the value of the MQLIGHT_NODE_LOG environment
@@ -251,14 +255,14 @@ def _get_http_service_function(service_url):
                     callback(None, service)
                 except Exception as exc:
                     err = TypeError(
-                        'http request to ' + service_url + ' returned ' +
-                        'unparseable JSON: ' + str(exc))
+                        'http request to {0} returned ' +
+                        'unparseable JSON: {1}'.format(service_url, exc))
                     LOG.error('_http_service_function', NO_CLIENT_ID, err)
                     callback(err)
             else:
                 err = mqlexc.NetworkError(
-                    'http request to ' + service_url + ' failed with a ' +
-                    'status code of ' + str(res.status))
+                    'http request to {0} failed with a status code ' +
+                    'of {1}'.format(service_url, res.status))
                 LOG.error('_http_service_function', NO_CLIENT_ID, err)
                 callback(err, None)
         except (httplib.HTTPException, socket.error) as exc:
@@ -308,16 +312,14 @@ def _get_file_service_function(file_url):
                 callback(None, service)
             except Exception as exc:
                 err = mqlexc.MQLightError(
-                    'The content read from ' + file_path + ' contained ' +
-                    'unparseable JSON: ' + str(exc))
+                    'The content read from {0} contained ' +
+                    'unparseable JSON: {1}'.format(file_path, exc))
                 LOG.error('_file_service_function', NO_CLIENT_ID, err)
                 callback(err, None)
         file_obj.close()
         if not opened:
             err = mqlexc.MQLightError(
-                'attempt to read ' +
-                file_path +
-                ' failed')
+                'attempt to read {0} failed'.format(file_path))
             LOG.error('_file_service_function', NO_CLIENT_ID, err)
             callback(err, None)
         LOG.exit('_file_service_function', NO_CLIENT_ID, None)
@@ -334,10 +336,6 @@ def _generate_service_list(service, security_options):
     them, returning a list of service URLs
     """
     LOG.entry('_generate_service_list', NO_CLIENT_ID)
-    LOG.parms(
-        NO_CLIENT_ID,
-        'service:',
-        re.sub(r':[^:]+@', ':********@', service))
     LOG.parms(NO_CLIENT_ID, 'security_options:', security_options)
 
     # Ensure the service is a list
@@ -395,7 +393,7 @@ def _generate_service_list(service, security_options):
                     'User name supplied as user property ' +
                     'security_options.property_user does not match ' +
                     'username supplied via a URL passed via the ' +
-                    'service property ' + auth_user)
+                    'service property {0}'.format(auth_user))
                 LOG.error('_generate_service_list', NO_CLIENT_ID, error)
                 raise error
             password = security_options.property_password
@@ -404,7 +402,7 @@ def _generate_service_list(service, security_options):
                     'Password name supplied as password property ' +
                     'security_options.property_password  does not match ' +
                     'password supplied via a URL passed via the ' +
-                    'service property ' + auth_password)
+                    'service property {0}'.format(auth_password))
                 LOG.error('_generate_service_list', NO_CLIENT_ID, error)
                 raise error
             if i == 0:
@@ -431,10 +429,9 @@ def _generate_service_list(service, security_options):
         # Check we are trying to use the amqp protocol
         if protocol not in ('amqp', 'amqps'):
             error = mqlexc.InvalidArgumentError(
-                'Unsupported URL ' + input_service_list[i] +
-                ' specified for service. ' +
-                'Only the amqp or amqps protocol are supported.' +
-                protocol)
+                'Unsupported URL {0} specified for service. ' +
+                'Only the amqp or amqps protocol are supported.'.format(
+                    input_service_list[i]))
             LOG.error('_generate_service_list', NO_CLIENT_ID, error)
             raise error
 
@@ -442,8 +439,8 @@ def _generate_service_list(service, security_options):
         host = service_url.hostname
         if host is None or host == '':
             error = mqlexc.InvalidArgumentError(
-                'Unsupported URL ' + input_service_list[i] +
-                ' specified for service. Must supply a hostname.')
+                'Unsupported URL {0} specified for service. Must supply ' +
+                'a hostname.'.format(input_service_list[i]))
             LOG.error('_generate_service_list', NO_CLIENT_ID, error)
             raise error
 
@@ -458,8 +455,8 @@ def _generate_service_list(service, security_options):
         path = service_url.path
         if path and path != '/':
             error = mqlexc.InvalidArgumentError(
-                'Unsupported URL ' + input_service_list[i] +
-                ' paths (' + path + ' ) cannot be part of a service URL.')
+                'Unsupported URL {0} paths ({1}) cannot be part of a ' +
+                'service URL.'.format(input_service_list[i], path))
             LOG.error('_generate_service_list', NO_CLIENT_ID, error)
             raise error
 
@@ -476,11 +473,12 @@ def _generate_service_list(service, security_options):
             url = credentials + '@' + url
         if service_url.netloc.lower() != url:
             error = mqlexc.InvalidArgumentError(
-                'Unsupported URL ' + input_service_list[i] + ' is not valid')
+                'Unsupported URL {0} is not valid'.format(
+                    input_service_list[i]))
             LOG.error('_generate_service_list', NO_CLIENT_ID, error)
             raise error
 
-        service_list.append(protocol + '://' + host + ':' + str(port))
+        service_list.append('{0}://{1}:{2}'.format(protocol, host, port))
     LOG.exit('_generate_service_list', NO_CLIENT_ID, service_list)
     return service_list
 
@@ -548,9 +546,9 @@ class Client(object):
             elif service_url.scheme == 'file':
                 if service_url.hostname and service_url.hostname != 'localhost':
                     error = mqlexc.InvalidArgumentError(
-                        'service contains unsupported file URI of ' + service +
+                        'service contains unsupported file URI of {0}' +
                         ', only file:///path or file://localhost/path are ' +
-                        ' supported.')
+                        ' supported.'.format(service))
                     LOG.error('Client.constructor', NO_CLIENT_ID, error)
                     raise error
                 service_function = _get_file_service_function(service_url.path)
@@ -564,8 +562,8 @@ class Client(object):
         # If the client id is incorrectly formatted then throw an error
         if len(client_id) > 48:
             error = mqlexc.InvalidArgumentError(
-                'Client identifier ' + client_id +
-                ' is longer than the maximum ID length of 48')
+                'Client identifier {0} is longer than the maximum ID length ' +
+                'of 48'.format(client_id))
             LOG.error('Client.constructor', NO_CLIENT_ID, error)
             raise error
 
@@ -579,8 +577,8 @@ class Client(object):
         matches = re.search(INVALID_CLIENT_ID_REGEX, client_id)
         if matches is not None:
             error = mqlexc.InvalidArgumentError(
-                'Client Identifier ' + client_id +
-                ' contains invalid char: ' + matches.group(0))
+                'Client Identifier {0} contains invalid char: {1}'.format(
+                    client_id, matches.group(0)))
             LOG.error('Client.constructor', NO_CLIENT_ID, error)
             raise error
 
@@ -605,17 +603,16 @@ class Client(object):
             if s_o.ssl_verify_name:
                 if s_o.ssl_verify_name not in [True, False]:
                     error = mqlexc.InvalidArgumentError(
-                        'ssl_verify_name value ' +
-                        s_o.ssl_verify_name + ' is invalid. ' +
-                        'Must evaluate to True of False')
+                        'ssl_verify_name value {0} is invalid. ' +
+                        'Must evaluate to True of False'.format(
+                            s_o.ssl_verify_name))
                     LOG.error('Client.constructor', NO_CLIENT_ID, error)
                     raise error
             if s_o.ssl_trust_certificate:
                 if not isinstance(s_o.ssl_trust_certificate, str):
                     error = TypeError(
-                        'ssl_trust_certificate value ' +
-                        str(s_o.ssl_trust_certificate) +
-                        ' is invalid. Must be a string')
+                        'ssl_trust_certificate value {0} is invalid. ' +
+                        'Must be a string'.format(s_o.ssl_trust_certificate))
                     LOG.error('Client.constructor', NO_CLIENT_ID, error)
                     raise error
                 if not os.path.isfile(s_o.ssl_trust_certificate):
@@ -748,7 +745,7 @@ class Client(object):
             # if we are not disconnected or disconnecting return with the client
             # object
             if current_state not in (STOPPED, RETRYING):
-                if (current_state == STOPPING):
+                if current_state == STOPPING:
                     def _still_disconnecting(client, callback):
                         """
                         Waits while the client is disconnecting
@@ -787,7 +784,7 @@ class Client(object):
             if self._messenger and not self._messenger.stopped:
                 err = mqlexc.MQLightError('messenger is not stopped')
                 LOG.ffdc('Client._perform_connect', 'ffdc001', self._id, err)
-                LOG.error('Client._perform_connect', err)
+                LOG.error('Client._perform_connect', self._id, err)
                 raise err
         else:
             self._set_state(STARTING)
@@ -824,7 +821,7 @@ class Client(object):
                 self._connect_to_service(callback)
             except Exception as exc:
                 ACTIVE_CLIENTS.remove(self._id)
-                LOG.error('Client._perform_connect', exc)
+                LOG.error('Client._perform_connect', self._id, exc)
                 if callback:
                     callback(exc)
         LOG.exit('Client._perform_connect', self._id, None)
@@ -1036,9 +1033,11 @@ class Client(object):
             if messages and len(messages) > 0:
                 LOG.debug(
                     self._id,
-                    'received ' + str(len(messages)) + ' messages')
+                    'received {0} messages'.format(len(messages)))
                 for message in range(len(messages)):
-                    LOG.debug(self._id, 'processing message ' + str(message))
+                    LOG.debug(
+                        self._id,
+                        'processing message {0}'.format(message))
                     self._process_message(messages[message])
                     if message < (len(messages) - 1):
                         # Unless this is the last pass around the loop, call
@@ -1112,7 +1111,7 @@ class Client(object):
                 'received message matched more than one subscription')
             LOG.ffdc(
                 'Client._process_message',
-                'ffdc003',
+                'ffdc002',
                 self._id,
                 err)
         subscription = matched_subs[0]
@@ -1127,9 +1126,8 @@ class Client(object):
             # subscription we've subsequently unsubscribed from
             LOG.debug(
                 self._id,
-                'No subscription matched message: ' +
-                data + ' going to address: ' +
-                msg.address)
+                'No subscription matched message: {0} going to address: ' +
+                '{1}'.format(data, msg.address))
             msg = None
             LOG.exit_often('Client._process_message', self._id, None)
             return
@@ -1165,13 +1163,10 @@ class Client(object):
                 LOG.data(
                     self._id,
                     '[credit, unconfirmed, confirmed]:',
-                    '[' +
-                    subscription['credit'] +
-                    ', ' +
-                    subscription['unconfirmed'] +
-                    ', ' +
-                    subscription['confirmed'] +
-                    ']')
+                    '[{0}, {1}, {2}]'.format(
+                        subscription['credit'],
+                        subscription['unconfirmed'],
+                        subscription['confirmed']))
                 # Ask to flow more messages if >= 80% of available
                 # credit (e.g. not including unconfirmed messages)
                 # has been used or we have just confirmed
@@ -1268,13 +1263,10 @@ class Client(object):
                 LOG.data(
                     self._id,
                     '[credit, unconfirmed, confirmed]:',
-                    '[' +
-                    str(subscription['credit']) +
-                    ', ' +
-                    str(subscription['unconfirmed']) +
-                    ', ' +
-                    str(subscription['confirmed']) +
-                    ']')
+                    '[{0}, {1}, {2}]'.format(
+                        subscription['credit'],
+                        subscription['unconfirmed'],
+                        subscription['confirmed']))
                 # Ask to flow more messages if >= 80% of available
                 # credit (e.g. not including unconfirmed messages)
                 # has been used. Or we have just confirmed
@@ -1314,7 +1306,7 @@ class Client(object):
         LOG.entry('Client.stop', self._id)
         LOG.parms(NO_CLIENT_ID, 'callback:', callback)
 
-        if (callback and not hasattr(callback, '__call__')):
+        if callback and not hasattr(callback, '__call__'):
             raise TypeError('callback must be a function')
 
         # just return if already stopped or in the process of
@@ -1361,7 +1353,10 @@ class Client(object):
                             self._id)
                         msg['callback'](
                             mqlexc.StoppedError(
-                                'send aborted due to disconnect'))
+                                'send aborted due to disconnect'),
+                            None,
+                            None,
+                            None)
                         LOG.exit(
                             'Client._perform_disconnect.next_tick',
                             self._id,
@@ -1488,7 +1483,7 @@ class Client(object):
                         service_url.hostname + ':' + str(service_url.port)
                 else:
                     log_url = service
-                LOG.data(self._id, 'attempting to connect to: ' + log_url)
+                LOG.data(self._id, 'attempting to connect to: ', log_url)
 
                 connect_url = urlparse(service)
                 # Remove any path elements from the URL
@@ -1521,17 +1516,17 @@ class Client(object):
                     error = exc
                     LOG.data(
                         self._id,
-                        'failed to connect to: ' + str(log_url) +
-                        ' due to error: ' + str(error))
+                        'failed to connect to: {0} due to error: {1}'.format(
+                            log_url, error))
             except Exception as exc:
                 # Should never get here, as it means that messenger.connect has
                 # been called in an invalid way, so FFDC
                 error = exc
                 LOG.ffdc(
                     'Client._connect_to_service',
-                    'ffdc002',
+                    'ffdc003',
                     self._id,
-                    exc)
+                    traceback.format_exc())
                 raise mqlexc.MQLightError(exc)
 
         # If we've successfully connected then we're done, otherwise we'll
@@ -1633,7 +1628,7 @@ class Client(object):
             interval = round(interval) * CONNECT_RETRY_INTERVAL
             LOG.data(
                 self._id,
-                'trying to connect again after ' + str(interval) + ' seconds')
+                'trying to connect again after {0} seconds'.format(interval))
             timer = threading.Timer(interval, retry)
             timer.start()
 
@@ -1762,7 +1757,7 @@ class Client(object):
             else:
                 raise TypeError('callback must be a function')
         else:
-            raise mqlexc.InvalidArgumentError('invalid event ' + str(event))
+            raise mqlexc.InvalidArgumentError('invalid event {0}'.format(event))
         LOG.exit('Client.add_listener', self._id, None)
 
     def add_once_listener(self, event, callback):
@@ -1788,7 +1783,7 @@ class Client(object):
             else:
                 raise TypeError('callback must be a function')
         else:
-            raise mqlexc.InvalidArgumentError('invalid event ' + str(event))
+            raise mqlexc.InvalidArgumentError('invalid event {0}'.format(event))
         LOG.exit('Client.add_once_listener', self._id, None)
 
     def del_listener(self, event, callback):
@@ -1808,7 +1803,7 @@ class Client(object):
             if event in self._callbacks and callback in self._callbacks[event]:
                 self._callbacks[event].remove(callback)
         else:
-            raise mqlexc.InvalidArgumentError('invalid event ' + str(event))
+            raise mqlexc.InvalidArgumentError('invalid event {0}'.format(event))
         LOG.exit('Client.del_listener', self._id, None)
 
     def _emit(self, event, *args, **kwargs):
@@ -1837,7 +1832,7 @@ class Client(object):
                     callback(*args, **kwargs)
                     self._once_callbacks[event].remove(callback)
         else:
-            raise mqlexc.InvalidArgumentError('invalid event ' + str(event))
+            raise mqlexc.InvalidArgumentError('invalid event {0}'.format(event))
         LOG.exit('Client._emit', self._id, None)
 
     def send(self, topic, data, options=None, callback=None):
@@ -1897,8 +1892,8 @@ class Client(object):
                     qos = options['qos']
                 else:
                     raise mqlexc.RangeError(
-                        'options[\'qos\'] value ' + str(options['qos']) +
-                        ' is invalid must evaluate to 0 or 1')
+                        'options[\'qos\'] value {0} is invalid must evaluate ' +
+                        'to 0 or 1'.format(options['qos']))
             if 'ttl' in options:
                 try:
                     ttl = int(options['ttl'])
@@ -1909,8 +1904,8 @@ class Client(object):
                         ttl = 4294967295
                 except Exception as err:
                     raise mqlexc.RangeError(
-                        'options[\'ttl\'] value ' + str(options['ttl']) +
-                        ' is invalid must be an unsigned integer number')
+                        'options[\'ttl\'] value {0} is invalid must be an ' +
+                        'unsigned integer number'.format(options['ttl']))
 
         if callback:
             if not hasattr(callback, '__call__'):
@@ -1975,7 +1970,7 @@ class Client(object):
 
             if len(self._outstanding_sends) == 1:
                 def send_outbound_msg():
-                    LOG.entry('Client.send.send_outbound_msg', self._id)
+                    LOG.entry_often('Client.send.send_outbound_msg', self._id)
                     LOG.data(
                         self._id,
                         '_outstanding_sends:',
@@ -2077,9 +2072,10 @@ class Client(object):
                                         1,
                                         send_outbound_msg)
                                     timer.start()
-                                    LOG.exit('Client.send.send_outbound_msg',
-                                             self._id,
-                                             None)
+                                    LOG.exit_often(
+                                        'Client.send.send_outbound_msg',
+                                        self._id,
+                                        None)
                                     return
                         else:
                             # Messenger has been stopped
@@ -2157,7 +2153,7 @@ class Client(object):
                                 callback_error)
                             raise callback_error
 
-                    LOG.exit(
+                    LOG.exit_often(
                         'Client.send.send_outbound_msg',
                         self._id,
                         None)
@@ -2285,9 +2281,9 @@ class Client(object):
             share = str(share)
             if ':' in share:
                 raise mqlexc.InvalidArgumentError(
-                    'share argument value ' + share +
-                    ' is invalid because it contains a colon character')
-            share = 'share:' + share + ':'
+                    'share argument value {0} is invalid because it contains ' +
+                    'a colon character'.format(share))
+            share = 'share:{0}:'.format(share)
         else:
             share = 'private:'
         LOG.parms(self._id, 'share:', share)
@@ -2308,16 +2304,16 @@ class Client(object):
                     qos = options['qos']
                 else:
                     raise mqlexc.RangeError(
-                        'options[\'qos\'] value ' + str(options['qos']) +
-                        ' is invalid must evaluate to 0 or 1')
+                        'options[\'qos\'] value {0} is invalid must evaluate ' +
+                        'to 0 or 1'.format(options['qos']))
             if 'autoConfirm' in options:
                 if options['autoConfirm'] in (True, False):
                     auto_confirm = options['autoConfirm']
                 else:
                     raise TypeError(
-                        'options[\'autoConfirm\'] value ' +
-                        str(options['autoConfirm']) +
-                        ' is invalid must evaluate to True or False')
+                        'options[\'autoConfirm\'] value {0} is invalid must ' +
+                        'evaluate to True or False'.format(
+                            options['autoConfirm']))
             if 'ttl' in options:
                 try:
                     ttl = int(options['ttl'])
@@ -2325,8 +2321,8 @@ class Client(object):
                         raise TypeError()
                 except Exception as err:
                     raise mqlexc.RangeError(
-                        'options[\'ttl\'] value ' + str(options['ttl']) +
-                        ' is invalid must be an unsigned integer number')
+                        'options[\'ttl\'] value {0} is invalid must be an ' +
+                        'unsigned integer number'.format(options['ttl']))
             if 'credit' in options:
                 try:
                     credit = int(options['credit'])
@@ -2334,8 +2330,8 @@ class Client(object):
                         raise TypeError()
                 except Exception as err:
                     raise mqlexc.RangeError(
-                        'options[\'credit\'] value ' + str(options['credit']) +
-                        ' is invalid must be an unsigned integer number')
+                        'options[\'credit\'] value {0} is invalid must be an ' +
+                        'unsigned integer number'.format(options['credit']))
 
         LOG.parms(self._id, 'share:', share)
 
@@ -2536,9 +2532,8 @@ class Client(object):
                 LOG.parms(self._id, 'options:', options)
             else:
                 error = TypeError(
-                    'options must be a dict type not a ' +
-                    str(type(options)) +
-                    ')')
+                    'options must be a dict type not a {0}'.format(
+                        type(options)))
                 LOG.error('Client.unsubscribe', self._id, error)
                 raise error
 
@@ -2551,9 +2546,9 @@ class Client(object):
                         raise ValueError()
                 except Exception as err:
                     raise mqlexc.RangeError(
-                        'options[\'ttl\'] value ' + str(options['ttl']) +
-                        ' is invalid, only 0 is a supported value for ' +
-                        ' an unsubscribe request')
+                        'options[\'ttl\'] value {0} is invalid, only 0 is a ' +
+                        'supported value for  an unsubscribe request'.format(
+                            options['ttl']))
 
         if callback and not hasattr(callback, '__call__'):
             err = TypeError('callback must be a function type')
