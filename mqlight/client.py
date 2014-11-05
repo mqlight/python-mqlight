@@ -226,28 +226,39 @@ def _should_reconnect(error):
     return result
 
 
-def _get_http_service_function(service_url):
+def _get_http_service_function(http, http_url):
     """
     Function to take a single HTTP URL and using the JSON retrieved from it to
     return an array of service URLs.
     """
     LOG.entry('_get_http_service_function', NO_CLIENT_ID)
-    LOG.parms(NO_CLIENT_ID, 'service_url:', service_url)
-    if not isinstance(service_url, str):
-        err = TypeError('service_url must be a string')
-        LOG.error('_get_http_service_function', NO_CLIENT_ID, err)
-        raise err
+    LOG.parms(NO_CLIENT_ID, 'http:', http)
+    LOG.parms(NO_CLIENT_ID, 'http_url:', http_url)
 
     def _http_service_function(callback):
         LOG.entry('_http_service_function', NO_CLIENT_ID)
         LOG.parms(NO_CLIENT_ID, 'callback:', callback)
+
+        func = httplib.HTTPConnection
+        if http_url.scheme == 'https':
+            func = httplib.HTTPSConnection
+        LOG.data(NO_CLIENT_ID, 'using :', func.__name__)
+
+        host = http_url.netloc
+        if http_url.port:
+            host += ':{0}'.format(http_url.port)
+        LOG.data(NO_CLIENT_ID, 'host:', host)
+
+        path = http[http.index(http_url.netloc) + len(http_url.netloc):]
+        LOG.data(NO_CLIENT_ID, 'path:', path)
         try:
-            conn = httplib.HTTPConnection(service_url.netloc)
-            conn.request('GET', service_url.path)
+            conn = func(host)
+            conn.request('GET', path)
             res = conn.getresponse()
+            print res
             if res.status == httplib.OK:
                 try:
-                    json_obj = loads(res)
+                    json_obj = loads(res.read())
                     if 'service' in json_obj:
                         service = json_obj['service']
                     else:
@@ -255,19 +266,21 @@ def _get_http_service_function(service_url):
                     callback(None, service)
                 except Exception as exc:
                     err = TypeError(
-                        'http request to {0} returned ' +
-                        'unparseable JSON: {1}'.format(service_url, exc))
+                        '{0} request to {1} returned ' +
+                        'unparseable JSON: {2}'.format(
+                            http_url.scheme, http, exc))
                     LOG.error('_http_service_function', NO_CLIENT_ID, err)
                     callback(err)
             else:
                 err = mqlexc.NetworkError(
-                    'http request to {0} failed with a status code ' +
-                    'of {1}'.format(service_url, res.status))
+                    '{0} request to {1} failed with a status code ' +
+                    'of {2}'.format(http_url.scheme, http, res.status))
                 LOG.error('_http_service_function', NO_CLIENT_ID, err)
                 callback(err, None)
         except (httplib.HTTPException, socket.error) as exc:
             err = mqlexc.NetworkError(
-                'http request to ' + service_url + ' failed:' + str(exc))
+                '{0} request to {1} failed: {2}'.format(
+                    http_url.scheme, http, exc))
             LOG.error('_http_service_function', NO_CLIENT_ID, err)
             callback(err, None)
         LOG.exit('_http_service_function', NO_CLIENT_ID, None)
@@ -542,7 +555,8 @@ class Client(object):
         elif isinstance(service, str):
             service_url = urlparse(service)
             if service_url.scheme in ('http', 'https'):
-                service_function = _get_http_service_function(service_url)
+                service_function = _get_http_service_function(
+                    service, service_url)
             elif service_url.scheme == 'file':
                 if service_url.hostname and service_url.hostname != 'localhost':
                     error = mqlexc.InvalidArgumentError(
