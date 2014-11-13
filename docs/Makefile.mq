@@ -1,0 +1,36 @@
+MQCOMM %Z% %W%           %I% %E% %U%
+/**********************************************************************/
+/*   <copyright                                                       */
+/*   notice="oco-source"                                              */
+/*   pids="5725-P60"                                                  */
+/*   years="2013"                                                     */
+/*   crc="2536674324" >                                               */
+/*   IBM Confidential                                                 */
+/*                                                                    */
+/*   OCO Source Materials                                             */
+/*                                                                    */
+/*   5725-P60                                                         */
+/*                                                                    */
+/*   (C) Copyright IBM Corp. 2014                                     */
+/*                                                                    */
+/*   The source code for the program is not published                 */
+/*   or otherwise divested of its trade secrets,                      */
+/*   irrespective of what has been deposited with the                 */
+/*   U.S. Copyright Office.                                           */
+/*   </copyright>                                                     */
+/**********************************************************************/
+
+/* Merge rst docs into ../README.rst */
+/*
+readme=../README.rst
+echo "" > $readme
+for f in $(ls .)
+do
+    cat $f >> $readme
+done
+*/
+
+/* Copy 01_description.rst into ../description.rst */
+/*
+cat 01_description.rst > ../description.rst
+*/

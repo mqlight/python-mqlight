@@ -4,11 +4,11 @@ Event: 'message'
 Emitted when a message is delivered from a destination matching one of the
 client's subscriptions.
 
-- `data` - (str, lst) the message body.
-- `delivery` - (dict) additional information about why the event was emitted.
+- ``data`` - (str, lst) the message body.
+- ``delivery`` - (dict) additional information about why the event was emitted.
   Properties include:
 
-  -  **message**, (dict) additional information about the message.  Properties
+  -  **message**, (dict) additional information about the message. Properties
      include:
 
     -  **topic**, (str, function) the topic that the message was sent to.
@@ -18,7 +18,7 @@ client's subscriptions.
        only be present if the message was delivered due to a subscribe call
        that specified both ``qos: 1`` and ``auto_confirm: False`` options.
     -  **ttl**, (int) the remaining time to live period for this message in
-       milliseconds. This is calculated by subtracting the time the message
+       seconds. This is calculated by subtracting the time the message
        spends at an MQ Light destination from the time to live value specified
        when the message is sent to MQ Light.
 
@@ -44,7 +44,7 @@ Event: 'stopped'
 ^^^^^^^^^^^^^^^^
 
 This event is emitted when a client attains ``stopped`` state as a result of the
-`mqlight.Client.stop` method being invoked. In this state the client will not
+``mqlight.Client.stop`` method being invoked. In this state the client will not
 receive messages, and attempting to send messages or subscribe to topic patterns
 will result in an error being thrown from the respective method call.
 

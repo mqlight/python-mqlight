@@ -8,7 +8,7 @@ method.
 
 * ``callback`` - (function) (optional) callback to be notified when the client
   has either: transitioned into ``started`` state; or has entered ``stopped``
-  state before it can transition into `started` state. The callback function
+  state before it can transition into ``started`` state. The callback function
   will be invoked with a ``StoppedError`` as its argument if the client
   transitions into stopped state before it attains ``started state`` - which can
   happen as a result of calling the ``client.stop`` method.

@@ -57,7 +57,7 @@ Error: StoppedError
 
 This is a subtype of ``Error`` defined by the MQ Light client. It is considered
 a programming error - but is unusual in that, in some circumstances, a client
-may reasonably expect to receive `StoppedError` as a result of its actions
+may reasonably expect to receive ``StoppedError`` as a result of its actions
 and would typically not be altered to avoid this condition occurring.
 ``StoppedError`` is thrown by methods which require connectivity to the server
 (e.g. send, subscribe) when they are invoked while the client is in stopping or
