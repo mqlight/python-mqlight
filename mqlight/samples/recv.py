@@ -129,7 +129,7 @@ def subscribe(err):
     print 'Subscribing to: ' + topic_pattern
     options = {
         'qos': mqlight.QOS_AT_LEAST_ONCE,
-        'auto_confirm': False
+        'autoConfirm': False
     }
     if args.destination_ttl is not None:
         options['destination_ttl'] = args.destination_ttl
@@ -158,7 +158,7 @@ def message(data, delivery):
         print 'Writing message data to ' + args.file
         with open(args.file, 'wb') as f:
             f.write(''.join(data))
-        delivery.message.confirm_delivery()
+        delivery['message']['confirm_delivery'](None)
         client.stop()
     else:
         print 'data: ', data
@@ -166,7 +166,7 @@ def message(data, delivery):
             print 'delivery: ', delivery
         if delay > 0:
             time.sleep(delay)
-        delivery.message.confirm_delivery()
+        delivery['message']['confirm_delivery'](None)
 
 def error(err):
     print '*** error ***'
