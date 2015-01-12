@@ -1,7 +1,27 @@
+"""
+<copyright
+notice="lm-source-program"
+pids="5725-P60"
+years="2013,2014"
+crc="3568777996" >
+Licensed Materials - Property of IBM
+
+5725-P60
+
+(C) Copyright IBM Corp. 2013, 2014
+
+US Government Users Restricted Rights - Use, duplication or
+disclosure restricted by GSA ADP Schedule Contract with
+IBM Corp.
+</copyright>
+"""
 from mqlightlog import get_logger, NO_CLIENT_ID
 import mqlightexceptions as mqlexc
 
 LOG = get_logger(__name__)
+
+SEND_STATUS = 'SETTLED'
+CONNECT_STATUS = 0
 
 
 class _MQLightMessage(object):
@@ -82,32 +102,31 @@ class _MQLightMessenger(object):
         MQLightMessenger constructor
         """
         LOG.data(NO_CLIENT_ID, '_MQLightMessenger.constructor called')
-        self.connect_status = 0
         self._stopped = True
         self.stop_count = 2
-        self.send_status = 7
         self.remote_idle_timeout = -1
         self.work_callback = None
+        self.last_address = None
 
     def connect(self, service, ssl_trust_certificate, ssl_verify_name):
         """
         Connects to the specified service
         """
         LOG.data(NO_CLIENT_ID, '_MQLightMessenger.connect called')
-        if not self.stopped:
+        if not self._stopped:
             raise mqlexc.MQLightError('already connected')
         if 'bad' in service.netloc:
-            raise TypeError('bad service ' + service.netloc)
+            raise TypeError('bad service ' + service.scheme + '://' + service.netloc)
         if ssl_trust_certificate == 'BadCertificate':
             raise mqlexc.SecurityError('Bad certificate')
-        elif ssl_trust_certificate == 'BadVerify' and ssl_verify_name:
+        elif ssl_trust_certificate in ('BadVerify', 'BadVerify2') and ssl_verify_name:
             raise mqlexc.SecurityError('Bad verify name')
         else:
-            if self.connect_status != 0:
+            if CONNECT_STATUS != 0:
                 raise mqlexc.NetworkError(
-                    'connect error: ' + self.connect_status)
+                    'connect error: ' + str(CONNECT_STATUS))
             else:
-                self.stopped = False
+                self._stopped = False
                 LOG.data(NO_CLIENT_ID, 'successfully connected')
 
     def stop(self):
@@ -115,18 +134,18 @@ class _MQLightMessenger(object):
         Calls stop() on the proton Messenger
         """
         LOG.data(NO_CLIENT_ID, '_MQLightMessenger.stop called')
-        if not self.stopped:
+        if not self._stopped:
             self.stop_count -= 1
             if self.stop_count == 0:
-                self.stopped = True
+                self._stopped = True
                 self.stop_count = 2
-        return self.stopped
+        return self._stopped
 
     def _is_stopped(self):
         """
         Returns True
         """
-        return True
+        return self._stopped
 
     def _set_stopped(self, state):
         """
@@ -142,7 +161,8 @@ class _MQLightMessenger(object):
         LOG.data(NO_CLIENT_ID, '_MQLightMessenger.has_sent called')
         return True
 
-    def block_send_completion(self):
+    @staticmethod
+    def block_send_completion():
         """
         Temporarily blocks message sends from completing by forcing the status
         to return as PN_STATUS_PENDING.
@@ -150,9 +170,11 @@ class _MQLightMessenger(object):
         LOG.data(
             NO_CLIENT_ID,
             '_MQLightMessenger.block_send_completion called')
-        self.send_status = 1
+        global SEND_STATUS
+        SEND_STATUS = 'PENDING'
 
-    def unblock_send_completion(self):
+    @staticmethod
+    def unblock_send_completion():
         """
         Removes a block on message sends by forcing the status to
         PN_STATUS_SETTLED.
@@ -160,13 +182,16 @@ class _MQLightMessenger(object):
         LOG.data(
             NO_CLIENT_ID,
             '_MQLightMessenger.unblock_send_completion called')
-        self.send_status = 7
+        global SEND_STATUS
+        SEND_STATUS = 'SETTLED'
 
-    def set_connect_status(self, status):
+    @staticmethod
+    def set_connect_status(status):
         """
         Override the proton connection status.
         """
-        self.connect_status = status
+        global CONNECT_STATUS
+        CONNECT_STATUS = status
 
     def status_error(self, message):
         """
@@ -246,13 +271,16 @@ class _MQLightMessenger(object):
         LOG.data(
             NO_CLIENT_ID,
             '_MQLightMessenger.status called',
-            self.send_status)
-        return self.send_status
+            SEND_STATUS)
+        return SEND_STATUS
 
     def subscribe(self, address, qos, ttl, credit):
         """
         Subscribes to a topic
         """
+        if 'bad' in address:
+            raise TypeError('topic space on fire')
+        self.last_address = address
         return True
 
     def unsubscribe(self, address, ttl):
@@ -260,3 +288,7 @@ class _MQLightMessenger(object):
         Unsubscribes from a topic
         """
         return True
+
+    def pending_outbound(self, address):
+        LOG.data(NO_CLIENT_ID, '_MQLightMessenger.pending_outbound called')
+        return False

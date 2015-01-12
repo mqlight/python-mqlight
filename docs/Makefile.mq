@@ -21,16 +21,10 @@ MQCOMM %Z% %W%           %I% %E% %U%
 /**********************************************************************/
 
 /* Merge rst docs into ../README.rst */
-/*
-readme=../README.rst
-echo "" > $readme
-for f in $(ls .)
-do
-    cat $f >> $readme
-done
-*/
-
-/* Copy 01_description.rst into ../description.rst */
-/*
-cat 01_description.rst > ../description.rst
-*/
+#if defined(ArchitectureFamilyPc)
+DOC_SOURCES := $(sort $(wildcard Concat($(SPWD)@/,*.rst)))
+#else
+DOC_SOURCES := $(sort $(wildcard Concat($(SPWD)/,*.rst)))
+#endif
+ConcatFiles($(BPWD)/../README.rst, $(DOC_SOURCES))
+ConcatFiles($(BPWD)/../description.rst, $(SPWD)/01_description.rst)

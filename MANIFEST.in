@@ -1,5 +1,4 @@
-include MANIFEST.in
-include README.rst
-include description.rst
-include setup.cfg
-recursive-include samples *.py
+include *.rst
+recursive-include include *
+recursive-include mqlight *
+recursive-include tests *.py
