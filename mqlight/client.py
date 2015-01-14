@@ -1219,7 +1219,7 @@ class Client(object):
                 # Remove 'share:' prefix from link name
                 link = link[6:len(link_address)]
                 # Extract share name and add to delivery information
-                delivery['destination']['share'] = link[0, link.index(':')]
+                delivery['destination']['share'] = link[0:link.index(':')]
             # Extract topic_pattern and add to delivery information
             delivery['destination']['topic_pattern'] = link[
                 link.index(':') + 1:len(link)]
