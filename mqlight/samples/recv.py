@@ -94,10 +94,8 @@ parser.add_argument(
 parser.add_argument(
     '--verbose',
     dest='verbose',
-    type=bool,
-    default=False,
-    help='print additional information about each message. (default: ' +
-        '%(default)s)')
+    action='store_true',
+    help='print additional information about each message.')
 args = parser.parse_args()
 
 service = args.service
