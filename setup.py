@@ -64,8 +64,9 @@ setup(
     keywords='ibm mqlight',
     packages=find_packages(exclude=['tests']),
     package_data={'mqlight': ['*.dll', 'libqpid-proton*', 'samples/*.py']},
+    ext_package='mqlight',
     ext_modules=[
-        Extension(name=path.join('mqlight', '_cproton'),
+        Extension(name='_cproton',
                   sources=get_sources(),
                   include_dirs=[path.join(HERE, 'include')],
                   library_dirs=['mqlight'],
