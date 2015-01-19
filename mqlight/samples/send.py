@@ -181,7 +181,7 @@ def send_message():
         body = messages[msg_num]
         options = { 'qos': mqlight.QOS_AT_LEAST_ONCE }
         if message_ttl is not None:
-            options['ttl'] = message_ttl
+            options['ttl'] = message_ttl * 1000
         if sequence and args.file is None:
             global SEQUENCE
             SEQUENCE += 1
