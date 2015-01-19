@@ -53,7 +53,7 @@ def get_extra_link_args():
 
 setup(
     name='mqlight',
-    version='1.0.0',
+    version='9.9.9999999999',
     description='IBM MQ Light Client Python Module',
     long_description=LONG_DESCRIPTION,
     url='https://developer.ibm.com/messaging/mq-light/',
