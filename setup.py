@@ -17,12 +17,15 @@ IBM Corp.
 """
 from setuptools import setup, find_packages, Extension
 from codecs import open as codecs_open
-from os import path
+from os import path, environ
 from platform import system
 
 HERE = path.abspath(path.dirname(__file__))
 with codecs_open(path.join(HERE, 'description.rst'), encoding='utf-8') as f:
     LONG_DESCRIPTION = f.read()
+
+if system() == 'Darwin':
+    environ['ARCHFLAGS'] = '-arch x86_64'
 
 
 def get_sources():
@@ -37,6 +40,14 @@ def get_runtime_library_dirs():
     """Return a custom rpath to write into the extension"""
     if system() == 'Linux':
         return ['$ORIGIN']
+    else:
+        return []
+
+
+def get_extra_link_args():
+    """Return a list of extra arguments to supply at extension link time"""
+    if system() == 'Darwin':
+        return ['-Wl,-rpath,@loader_path/']
     else:
         return []
 
@@ -71,7 +82,8 @@ setup(
                   include_dirs=[path.join(HERE, 'include')],
                   library_dirs=['mqlight'],
                   libraries=['qpid-proton'],
-                  runtime_library_dirs=get_runtime_library_dirs()),
+                  runtime_library_dirs=get_runtime_library_dirs(),
+                  extra_link_args=get_extra_link_args()),
     ],
     extras_require={
         'test': ['mock'],
