@@ -99,7 +99,7 @@ parser.add_argument(
     metavar='MESSAGE',
     type=str,
     nargs='*',
-    default=['Hello world !'],
+    default=['Hello World!'],
     help='message to be sent (default: %(default)s)')
 args = parser.parse_args()
 
@@ -205,10 +205,7 @@ def sent(err, topic, data, options):
         exit(1)
     else:
         if data:
-            print '# sent message:'
-            print 'data: ', data
-            print 'topic: ', topic
-            print 'options: ', options
+            print data
 
 def error(err):
     """

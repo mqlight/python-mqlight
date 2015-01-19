@@ -124,7 +124,6 @@ if args.trust_certificate is not None:
 def subscribe(err):
     print 'Connected to ' + client.get_service() + ' using client-id ' + \
         client.get_id()
-    print 'Subscribing to: ' + topic_pattern
     options = {
         'qos': mqlight.QOS_AT_LEAST_ONCE,
         'autoConfirm': False
@@ -159,9 +158,9 @@ def message(data, delivery):
         delivery['message']['confirm_delivery'](None)
         client.stop()
     else:
-        print 'data: ', data
+        print data
         if verbose:
-            print 'delivery: ', delivery
+            print delivery
         if delay > 0:
             time.sleep(delay)
         delivery['message']['confirm_delivery'](None)
