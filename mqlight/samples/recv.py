@@ -170,6 +170,7 @@ def error(err):
     print '*** error ***'
     if err:
         print err
+    client.stop()
     print 'Exiting.'
     exit(1)
 

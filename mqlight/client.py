@@ -676,6 +676,9 @@ class Client(object):
 
         # An identifier for the connection
         self._connection_id = 0
+        
+        # Connection retry timer
+        self._retry_timer = None
 
         # Heartbeat
         self._heartbeat_timeout = None
@@ -1326,6 +1329,10 @@ class Client(object):
         if callback and not hasattr(callback, '__call__'):
             raise TypeError('callback must be a function')
 
+        # Cancel retry timer
+        if self._retry_timer:
+            self._retry_timer.cancel()
+
         # just return if already stopped or in the process of
         # stopping
         if self.is_stopped():
@@ -1646,8 +1653,8 @@ class Client(object):
             LOG.data(
                 self._id,
                 'trying to connect again after {0} seconds'.format(interval))
-            timer = threading.Timer(interval, retry)
-            timer.start()
+            self._retry_timer = threading.Timer(interval, retry)
+            self._retry_timer.start()
 
             if error:
                 def next_tick():

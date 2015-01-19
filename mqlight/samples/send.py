@@ -201,6 +201,7 @@ def sent(err, topic, data, options):
     """
     if err:
         print 'Problem with send request: ' + str(err)
+        client.stop()
         exit(1)
     else:
         if data:
@@ -216,6 +217,7 @@ def error(err):
     print '*** error ***'
     if err:
         print err
+    client.stop()
     print 'Exiting.'
     exit(1)
 
