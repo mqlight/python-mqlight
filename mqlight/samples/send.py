@@ -83,10 +83,9 @@ parser.add_argument(
 parser.add_argument(
     '--sequence',
     dest='sequence',
-    type=bool,
-    default=False,
+    action='store_true',
     help='prefix a sequence number to the message payload, ignored for ' +
-        'binary messages (default: %(default)s)')
+        'binary messages')
 parser.add_argument(
     '-f',
     '--file',
