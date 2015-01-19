@@ -20,7 +20,7 @@ import re
 import inspect
 import os
 import mqlight
-import mqlightexceptions as mqlexc
+import mqlight.mqlightexceptions as mqlexc
 
 class TestCreateClient(unittest.TestCase):
     """

@@ -19,8 +19,8 @@ import unittest
 from mock import Mock, patch
 import mqlight
 
-@patch('mqlight._MQLightMessenger.connect', Mock(return_value=None))
-@patch('mqlight._MQLightMessenger.get_last_error_text', Mock(return_value=None))
+@patch('mqlight.mqlightproton._MQLightMessenger.connect', Mock(return_value=None))
+# @patch('mqlight.mqlightproton._MQLightMessenger.get_last_error_text', Mock(return_value=None))
 class TestStop(unittest.TestCase):
 
     def test_stop_callback_event(self):

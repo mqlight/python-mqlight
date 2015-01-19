@@ -30,7 +30,7 @@ def side_effect(service, ssl_trust_certificate, ssl_verify_name):
         else:
             return None
 
-@patch('mqlight._MQLightMessenger.connect', Mock(side_effect=side_effect))
+@patch('mqlight.mqlightproton._MQLightMessenger.connect', Mock(side_effect=side_effect))
 class TestStart(unittest.TestCase):
 
     def setUp(self):
