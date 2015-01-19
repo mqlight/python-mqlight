@@ -1,4 +1,5 @@
 include *.rst
 recursive-include include *
+recursive-include licenses *
 recursive-include mqlight *
 recursive-include tests *.py
