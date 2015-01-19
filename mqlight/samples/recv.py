@@ -103,7 +103,7 @@ topic_pattern = args.topic_pattern
 if args.client_id is not None:
     client_id = args.client_id
 else:
-    client_id = 'send_' + str(uuid.uuid4()).replace('-', '_')[0:7]
+    client_id = 'recv_' + str(uuid.uuid4()).replace('-', '_')[0:7]
 delay = args.delay
 share = args.share_name
 verbose = args.verbose
