@@ -1077,12 +1077,10 @@ class Client(object):
                 if _should_reconnect(exc):
                     self._reconnect()
             timer = threading.Timer(1, next_tick)
-            timer.daemon = True
             timer.start()
 
         if self.get_state() == STARTED:
             timer = threading.Timer(0.2, self._check_for_messages)
-            timer.daemon = True
             timer.start()
 
         LOG.exit_often('Client._check_for_messages', self._id, None)
@@ -1390,7 +1388,6 @@ class Client(object):
                             self._id,
                             None)
                     timer = threading.Timer(1, next_tick)
-                    timer.daemon = True
                     timer.start()
 
                 # Clear the active subscriptions list as we were asked to
@@ -1597,7 +1594,6 @@ class Client(object):
                         self._id,
                         None)
             timer = threading.Timer(0.2, next_tick)
-            timer.daemon = True
             timer.start()
 
             # Setup heartbeat timer to ensure that while connected we send
@@ -1666,7 +1662,6 @@ class Client(object):
                 self._id,
                 'trying to connect again after {0} seconds'.format(interval))
             self._retry_timer = threading.Timer(interval, retry)
-            self._retry_timer.daemon = True
             self._retry_timer.start()
 
             if error:
@@ -1678,7 +1673,6 @@ class Client(object):
                         error)
                     self._emit(ERROR, error)
                 timer = threading.Timer(1, next_tick)
-                timer.daemon = True
                 timer.start()
         LOG.exit('Client._connect_to_service', self._id, None)
 
@@ -2116,7 +2110,6 @@ class Client(object):
                                     timer = threading.Timer(
                                         1,
                                         send_outbound_msg)
-                                    timer.daemon = True
                                     timer.start()
                                     LOG.exit_often(
                                         'Client.send.send_outbound_msg',
@@ -2473,7 +2466,6 @@ class Client(object):
             # to start the polling loop to check for messages arriving
             if is_first_sub:
                 timer2 = threading.Timer(0, self._check_for_messages)
-                timer2.daemon = True
                 timer2.start()
 
         LOG.exit('Client.subscribe', self._id, self)
