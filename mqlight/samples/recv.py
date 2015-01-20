@@ -129,7 +129,7 @@ def subscribe(err):
         'autoConfirm': False
     }
     if args.destination_ttl is not None:
-        options['destination_ttl'] = args.destination_ttl
+        options['ttl'] = args.destination_ttl
     if args.delay is not None and args.delay > 0:
         options['credit'] = 1
     client.add_listener(mqlight.MESSAGE, message)
