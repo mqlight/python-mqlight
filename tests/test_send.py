@@ -10,7 +10,7 @@ Licensed Materials - Property of IBM
 
 5725-P60
 
-(C) Copyright IBM Corp. 2013, 2014
+(C) Copyright IBM Corp. 2013, 2015
 
 US Government Users Restricted Rights - Use, duplication or
 disclosure restricted by GSA ADP Schedule Contract with
@@ -95,6 +95,7 @@ class TestSend(unittest.TestCase):
         def timeout():
             self.assertTrue(False)
         timer = threading.Timer(5, timeout)
+        timer.daemon = True
         client = mqlight.Client('amqp://host')
         self.count = 0
         def callback(err, topic, d, options):

@@ -16,6 +16,7 @@ IBM Corp.
 </copyright>
 """
 from setuptools import setup, find_packages, Extension
+from setuptools.command.test import test as TestCommand
 from codecs import open as codecs_open
 from os import path, environ
 from platform import system
@@ -51,6 +52,22 @@ def get_extra_link_args():
     else:
         return []
 
+
+# pylint: disable=R0904
+class PyTest(TestCommand):
+    """TestCommand to run suite using py.test"""
+    test_args = []
+    test_suite = True
+
+    def finalize_options(self):
+        TestCommand.finalize_options(self)
+
+    def run_tests(self):
+        import pytest
+        self.test_args.insert(0, '--junitxml=junit.xml')
+        self.test_args.insert(0, '--timeout=10')
+        pytest.main(self.test_args)
+
 setup(
     name='mqlight',
     version='9.9.9999999999',
@@ -85,8 +102,8 @@ setup(
                   runtime_library_dirs=get_runtime_library_dirs(),
                   extra_link_args=get_extra_link_args()),
     ],
-    extras_require={
-        'test': ['mock'],
-    },
+    test_suite='tests',
+    tests_require=['pytest_timeout', 'pytest', 'mock'],
+    cmdclass={'test': PyTest},
     zip_safe=True
 )

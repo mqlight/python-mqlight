@@ -649,6 +649,7 @@ class Client(object):
         # Save the required data as client fields
         self._service_function = service_function
         self._service_list = None
+        self._service_param = service
         self._id = client_id
         self._security_options = s_o
 
@@ -953,11 +954,11 @@ class Client(object):
                     ERROR,
                     err)
                 previous_client._emit(ERROR, err)
-                self._perform_connect(callback, self._service, False)
+                self._perform_connect(callback, self._service_param, False)
             previous_client.stop(stop_callback)
         else:
             ACTIVE_CLIENTS.add(self)
-            self._perform_connect(callback, self._service, False)
+            self._perform_connect(callback, self._service_param, False)
 
         LOG.exit('Client.start', self._id, self)
         return self
@@ -1074,10 +1075,12 @@ class Client(object):
                 if _should_reconnect(exc):
                     self._reconnect()
             timer = threading.Timer(1, next_tick)
+            timer.daemon = True
             timer.start()
 
         if self.get_state() == STARTED:
             timer = threading.Timer(0.2, self._check_for_messages)
+            timer.daemon = True
             timer.start()
 
         LOG.exit_often('Client._check_for_messages', self._id, None)
@@ -1386,6 +1389,7 @@ class Client(object):
                             self._id,
                             None)
                     timer = threading.Timer(1, next_tick)
+                    timer.daemon = True
                     timer.start()
 
                 # Clear the active subscriptions list as we were asked to
@@ -1425,6 +1429,7 @@ class Client(object):
 
         # Try disconnect again
         timer = threading.Timer(1, self._perform_disconnect, [callback])
+        timer.daemon = True
         timer.start()
         LOG.exit('Client._perform_disconnect', self._id, None)
 
@@ -1454,6 +1459,7 @@ class Client(object):
             timer = threading.Timer(
                 1,
                 self._stop_messenger, [stop_processing_callback, callback])
+            timer.daemon = True
             timer.start()
         LOG.exit('Client._stop_messenger', self._id, None)
 
@@ -1588,6 +1594,7 @@ class Client(object):
                         self._id,
                         None)
             timer = threading.Timer(0.2, next_tick)
+            timer.daemon = True
             timer.start()
 
             # Setup heartbeat timer to ensure that while connected we send
@@ -1614,6 +1621,7 @@ class Client(object):
                             heartbeat_interval,
                             perform_heartbeat,
                             [heartbeat_interval])
+                        self._heartbeat_timeout.daemon = True
                         self._heartbeat_timeout.start()
                     LOG.exit(
                         'Client._connect_to_service.perform_heartbeat',
@@ -1623,6 +1631,7 @@ class Client(object):
                     heartbeat_interval,
                     perform_heartbeat,
                     [heartbeat_interval])
+                self._heartbeat_timeout.daemon = True
                 self._heartbeat_timeout.start()
 
         else:
@@ -1654,6 +1663,7 @@ class Client(object):
                 self._id,
                 'trying to connect again after {0} seconds'.format(interval))
             self._retry_timer = threading.Timer(interval, retry)
+            self._retry_timer.daemon = True
             self._retry_timer.start()
 
             if error:
@@ -1665,6 +1675,7 @@ class Client(object):
                         error)
                     self._emit(ERROR, error)
                 timer = threading.Timer(1, next_tick)
+                timer.daemon = True
                 timer.start()
         LOG.exit('Client._connect_to_service', self._id, None)
 
@@ -2095,6 +2106,7 @@ class Client(object):
                                     timer = threading.Timer(
                                         1,
                                         send_outbound_msg)
+                                    timer.daemon = True
                                     timer.start()
                                     LOG.exit_often(
                                         'Client.send.send_outbound_msg',
@@ -2241,6 +2253,7 @@ class Client(object):
                     if do_reconnect:
                         self._reconnect()
                 timer = threading.Timer(0.5, immediate)
+                timer.daemon = True
                 timer.start()
 
             self._queued_send_callbacks.append({
@@ -2414,6 +2427,7 @@ class Client(object):
             def next_tick():
                 callback(err, topic_pattern, original_share_value)
             timer1 = threading.Timer(1, next_tick)
+            timer1.daemon = True
             timer1.start()
 
         if err:
@@ -2454,6 +2468,7 @@ class Client(object):
             # to start the polling loop to check for messages arriving
             if is_first_sub:
                 timer2 = threading.Timer(0, self._check_for_messages)
+                timer2.daemon = True
                 timer2.start()
 
         LOG.exit('Client.subscribe', self._id, self)
@@ -2660,6 +2675,7 @@ class Client(object):
                     callback(None, topic_pattern, original_share_value)
                     LOG.exit('Client.unsubscribe.callback', self._id, None)
                 timer = threading.Timer(1, next_tick)
+                timer.daemon = True
                 timer.start()
 
             # if no errors, remove this from the stored list of subscriptions

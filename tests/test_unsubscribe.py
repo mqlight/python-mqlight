@@ -8,7 +8,7 @@ Licensed Materials - Property of IBM
 
 5725-P60
 
-(C) Copyright IBM Corp. 2013, 2014
+(C) Copyright IBM Corp. 2013, 2015
 
 US Government Users Restricted Rights - Use, duplication or
 disclosure restricted by GSA ADP Schedule Contract with
@@ -18,10 +18,15 @@ IBM Corp.
 import unittest
 import threading
 import time
-from mock import Mock
+from mock import Mock, patch
 import mqlight
 import mqlight.mqlightexceptions as mqlexc
 
+
+@patch('mqlight.mqlightproton._MQLightMessenger.connect',
+       Mock())
+@patch('mqlight.mqlightproton._MQLightMessenger.get_remote_idle_timeout',
+       Mock(return_value=0))
 class TestUnsubscribe(unittest.TestCase):
     """
     Unit tests for client.unsubscribe()
@@ -64,26 +69,24 @@ class TestUnsubscribe(unittest.TestCase):
             'amqp://host',
             'test_unsubscribe_callback_must_be_function'
         )
-        func = Mock()
-        with self.assertRaises(TypeError):
-            client.subscribe('/foo1', 'share')
-            client.unsubscribe('/foo1', 'share', {}, 7)
-        try:
+
+        def started(err):
+            func = Mock()
+            with self.assertRaises(TypeError):
+                client.subscribe('/foo1', 'share')
+                client.unsubscribe('/foo1', 'share', {}, 7)
+
             client.subscribe('/foo2')
             client.unsubscribe('/foo2', func)
-        except Exception:
-            self.assertTrue(False)
-        try:
+
             client.subscribe('/foo3', 'share')
             client.unsubscribe('/foo3', 'share', func)
-        except Exception:
-            self.assertTrue(False)
-        try:
+
             client.subscribe('/foo4', 'share')
             client.unsubscribe('/foo4', 'share', {}, func)
-        except Exception:
-            self.assertTrue(False)
-        client.stop()
+
+            client.stop()
+        client.add_listener(mqlight.STARTED, started)
 
     def test_unsubscribe_parameters(self):
         """
@@ -176,6 +179,7 @@ class TestUnsubscribe(unittest.TestCase):
                 self.assertTrue(True)
             else:
                 timer = threading.Timer(1, test_is_done)
+                timer.daemon = True
                 timer.start()
         test_is_done()
 

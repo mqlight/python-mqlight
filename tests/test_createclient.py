@@ -8,7 +8,7 @@ Licensed Materials - Property of IBM
 
 5725-P60
 
-(C) Copyright IBM Corp. 2013, 2014
+(C) Copyright IBM Corp. 2013, 2015
 
 US Government Users Restricted Rights - Use, duplication or
 disclosure restricted by GSA ADP Schedule Contract with
@@ -16,12 +16,16 @@ IBM Corp.
 </copyright>
 """
 import unittest
+from mock import Mock, patch
 import re
 import inspect
 import os
 import mqlight
 import mqlight.mqlightexceptions as mqlexc
 
+
+@patch('mqlight.mqlightproton._MQLightMessenger.connect',
+       Mock(return_value=None))
 class TestCreateClient(unittest.TestCase):
     """
     Unit tests for Client()
@@ -223,7 +227,7 @@ class TestCreateClient(unittest.TestCase):
             print data[i]
             with self.assertRaises(Exception) as err:
                 service = 'amqp://host'
-                client_id = 'test_bad_ssl_options'
+                client_id = 'test_bad_ssl_options_' + str(i)
                 security_options = data[i]
                 mqlight.Client(service, client_id, security_options)
             err_type = type(err.exception)

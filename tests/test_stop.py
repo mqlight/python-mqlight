@@ -8,7 +8,7 @@ Licensed Materials - Property of IBM
 
 5725-P60
 
-(C) Copyright IBM Corp. 2013, 2014
+(C) Copyright IBM Corp. 2013, 2015
 
 US Government Users Restricted Rights - Use, duplication or
 disclosure restricted by GSA ADP Schedule Contract with
@@ -25,15 +25,15 @@ class TestStop(unittest.TestCase):
 
     def test_stop_callback_event(self):
         """
-        Test a successful stop, ensuring that both the 'sopped'
+        Test a successful stop, ensuring that both the 'stopped'
         event and the callback passed into client.stopped(...) are driven.
         """
         client = mqlight.Client('amqp://host:1234')
-        callback = Mock()
+        callback = Mock(__name__='mock')
         client.add_listener(mqlight.STOPPED, callback)
         client.stop()
         self.assertEqual(client.get_state(), mqlight.STOPPED)
-        callback.assert_called_with(True)
+        callback.assert_called_with(None)
 
     def test_stop_argument_is_function(self):
         """
@@ -41,7 +41,7 @@ class TestStop(unittest.TestCase):
         function it must be a callback (e.g. of type function).
         """
         client = mqlight.Client('amqp://host:1234')
-        self.assertRaises(ValueError, client.stop, 1234)
+        self.assertRaises(TypeError, client.stop, 1234)
 
     def test_stop_method_returns_client(self):
         """

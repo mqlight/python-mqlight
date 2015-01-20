@@ -8,7 +8,7 @@ Licensed Materials - Property of IBM
 
 5725-P60
 
-(C) Copyright IBM Corp. 2013, 2014
+(C) Copyright IBM Corp. 2013, 2015
 
 US Government Users Restricted Rights - Use, duplication or
 disclosure restricted by GSA ADP Schedule Contract with
@@ -18,19 +18,23 @@ IBM Corp.
 import unittest
 from mock import Mock, patch
 import mqlight
+import mqlight.mqlightexceptions as mqlexc
 
 CONNECT_STATUS = 0
+
 
 def side_effect(service, ssl_trust_certificate, ssl_verify_name):
     if 'bad' in service.netloc:
         raise TypeError('bad service ' + service.netloc)
-    else:
-        if CONNECT_STATUS != 0:
-            raise mqlight.MQLightError('connect error ' + str(CONNECT_STATUS))
-        else:
-            return None
+    if CONNECT_STATUS != 0:
+        raise mqlight.MQLightError('connect error ' + str(CONNECT_STATUS))
+    pass
 
-@patch('mqlight.mqlightproton._MQLightMessenger.connect', Mock(side_effect=side_effect))
+
+@patch('mqlight.mqlightproton._MQLightMessenger.connect',
+       Mock(side_effect=side_effect))
+@patch('mqlight.mqlightproton._MQLightMessenger.get_remote_idle_timeout',
+       Mock(return_value=0))
 class TestStart(unittest.TestCase):
 
     def setUp(self):
@@ -60,7 +64,7 @@ class TestStart(unittest.TestCase):
         function it must be a callback (e.g. of type function)
         """
         client = mqlight.Client('amqp://host:1234')
-        self.assertRaises(ValueError, client.start, 1234)
+        self.assertRaises(TypeError, client.start, 1234)
 
     def test_start_method_returns_client(self):
         """
@@ -81,6 +85,7 @@ class TestStart(unittest.TestCase):
         def started(err, cli):
             self.assertEqual(err, None)
             self.assertEqual(cli.get_state(), mqlight.STARTED)
+
             def inner_started(err):
                 self.assertEqual(err, None)
                 self.assertFalse(
@@ -92,7 +97,7 @@ class TestStart(unittest.TestCase):
             def stopped(err):
                 self.assertEqual(err, None)
             cli.stop(stopped)
-        client = mqlight.Client('amqp://host:1234', callback=started)
+        mqlight.Client('amqp://host:1234', callback=started)
 
     def test_start_too_many_arguments(self):
         """
@@ -111,15 +116,17 @@ class TestStart(unittest.TestCase):
         required_connect_status = 2
         global CONNECT_STATUS
         CONNECT_STATUS = required_connect_status
-        client = mqlight.Client(service='amqp://host')
+        client = mqlight.Client('amqp://host:1234')
+
         def error_callback(err):
-            required_connect_status -= 1
             global CONNECT_STATUS
-            CONNECT_STATUS = required_connect_status
+            CONNECT_STATUS -= 1
         client.add_listener(mqlight.ERROR, error_callback)
 
         def start_callback(err):
-            self.assertEqual(required_connect_status, 0)
+            self.assertEqual(err, None)
+            global CONNECT_STATUS
+            self.assertEqual(CONNECT_STATUS, 0)
             client.stop()
         client.start(start_callback)
 
