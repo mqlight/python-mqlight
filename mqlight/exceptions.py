@@ -15,6 +15,8 @@ disclosure restricted by GSA ADP Schedule Contract with
 IBM Corp.
 </copyright>
 """
+
+
 class MQLightError(Exception):
 
     """
@@ -26,11 +28,12 @@ class MQLightError(Exception):
 class InvalidArgumentError(MQLightError):
 
     """
-    A subtype of MQLightError defined by the MQ Light client. It is considered a
-    programming error. The underlying cause for this error are the parameter
+    A subtype of MQLightError defined by the MQ Light client. It is considered
+    a programming error. The underlying cause for this error are the parameter
     values passed into a method.
     """
     pass
+
 
 class RangeError(MQLightError):
 
@@ -39,6 +42,7 @@ class RangeError(MQLightError):
     cause for this error are the parameter values passed into a method are not
     within certain values
     """
+
 
 class NetworkError(MQLightError):
 
@@ -61,12 +65,15 @@ class ReplacedError(MQLightError):
     """
     pass
 
+
 class LocalReplacedError(ReplacedError):
+
     """
     Special type of ReplacedError thrown by an invalidated Client instance. An
-    invaildated Client instance is one where the application has created another
-    Client instance with the same id, which replaces it.
+    invalidated Client instance is one where the application has created
+    another Client instance with the same id, which replaces it.
     """
+
     def __init__(self):
         self.msg = 'Client is Invalid. Application has created a ' + \
             'second Client instance with the same id'

@@ -67,6 +67,7 @@ class PyTest(TestCommand):
         self.test_args.insert(0, '--junitxml=junit.xml')
         self.test_args.insert(0, '--timeout=10')
         pytest.main(self.test_args)
+        pytest.main(['--pep8', '-m pep8', 'mqlight/'])
 
 setup(
     name='mqlight',
@@ -103,7 +104,7 @@ setup(
                   extra_link_args=get_extra_link_args()),
     ],
     test_suite='tests',
-    tests_require=['pytest_timeout', 'pytest', 'mock'],
+    tests_require=['pytest_pep8', 'pytest_timeout', 'pytest', 'mock'],
     cmdclass={'test': PyTest},
     zip_safe=True
 )

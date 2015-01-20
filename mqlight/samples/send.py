@@ -32,17 +32,18 @@ parser.add_argument(
     dest='service',
     type=str,
     default=SERVICE,
-    help='service to connect to, for example: amqp://user:password@host:5672 ' +
-        'or amqps://host:5671 to use SSL/TLS (default: %(default)s)')
+    help='service to connect to, for example: amqp://user:password@host:5672 '
+         'or amqps://host:5671 to use SSL/TLS (default: %(default)s)'
+)
 parser.add_argument(
     '-c',
     '--trust-certificate',
     dest='trust_certificate',
     type=str,
     default=None,
-    help='use the certificate contained in FILE (in PEM or DER format) to ' +
-        'validate the identify of the server. The connection must be secured ' +
-        'with SSL/TLS (e.g. the service URL must start with "amqps://")')
+    help='use the certificate contained in FILE (in PEM or DER format) to '
+         'validate the identify of the server. The connection must be secured '
+         'with SSL/TLS (e.g. the service URL must start with "amqps://")')
 parser.add_argument(
     '-t',
     '--topic',
@@ -56,15 +57,15 @@ parser.add_argument(
     dest='client_id',
     type=str,
     default=None,
-    help='the ID to use when connecting to MQ Light ' +
-        '(default: send_[0-9a-f]{7})')
+    help='the ID to use when connecting to MQ Light '
+         '(default: send_[0-9a-f]{7})')
 parser.add_argument(
     '--message-ttl',
     dest='message_ttl',
     type=int,
     default=None,
-    help='set message time-to-live to MESSAGE_TTL seconds ' +
-        '(default: %(default)s)')
+    help='set message time-to-live to MESSAGE_TTL seconds '
+         '(default: %(default)s)')
 parser.add_argument(
     '-d',
     '--delay',
@@ -78,21 +79,21 @@ parser.add_argument(
     dest='repeat',
     type=int,
     default=1,
-    help='send messages REPEAT times, if REPEAT <= 0 then repeat forever ' +
-        '(default: %(default)s)')
+    help='send messages REPEAT times, if REPEAT <= 0 then repeat forever '
+         '(default: %(default)s)')
 parser.add_argument(
     '--sequence',
     dest='sequence',
     action='store_true',
-    help='prefix a sequence number to the message payload, ignored for ' +
-        'binary messages')
+    help='prefix a sequence number to the message payload, ignored for '
+         'binary messages')
 parser.add_argument(
     '-f',
     '--file',
     dest='file',
     type=str,
-    help='send FILE as binary data. Cannot be specified at the same time as ' +
-        'MESSAGE')
+    help='send FILE as binary data. Cannot be specified at the same time as '
+         'MESSAGE')
 parser.add_argument(
     'messages',
     metavar='MESSAGE',
@@ -143,6 +144,7 @@ if args.file is not None:
     else:
         messages.append(message)
 
+
 def send_next_message():
     """
     Sends the next message
@@ -150,6 +152,7 @@ def send_next_message():
     if delay > 0:
         time.sleep(delay)
     send_message()
+
 
 def started(err):
     """
@@ -159,6 +162,7 @@ def started(err):
         client.get_id()
     print 'Sending to: ' + topic
     send_message()
+
 
 def send_message():
     """
@@ -179,7 +183,7 @@ def send_message():
     # Keep going until all messages have been sent
     if len(messages) > msg_num:
         body = messages[msg_num]
-        options = { 'qos': mqlight.QOS_AT_LEAST_ONCE }
+        options = {'qos': mqlight.QOS_AT_LEAST_ONCE}
         if message_ttl is not None:
             options['ttl'] = message_ttl * 1000
         if sequence and args.file is None:
@@ -194,6 +198,7 @@ def send_message():
         # No more messages to send, so disconnect
         client.stop()
 
+
 def sent(err, topic, data, options):
     """
     Message sent callback
@@ -205,6 +210,7 @@ def sent(err, topic, data, options):
     else:
         if data:
             print data
+
 
 def error(err):
     """

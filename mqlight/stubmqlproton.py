@@ -116,10 +116,12 @@ class _MQLightMessenger(object):
         if not self._stopped:
             raise mqlexc.MQLightError('already connected')
         if 'bad' in service.netloc:
-            raise TypeError('bad service ' + service.scheme + '://' + service.netloc)
+            raise TypeError(
+                'bad service ' + service.scheme + '://' + service.netloc)
         if ssl_trust_certificate == 'BadCertificate':
             raise mqlexc.SecurityError('Bad certificate')
-        elif ssl_trust_certificate in ('BadVerify', 'BadVerify2') and ssl_verify_name:
+        elif (ssl_trust_certificate in ('BadVerify', 'BadVerify2') and
+              ssl_verify_name):
             raise mqlexc.SecurityError('Bad verify name')
         else:
             if CONNECT_STATUS != 0:
@@ -204,7 +206,8 @@ class _MQLightMessenger(object):
         """
         Returns the idle timeout of the Messenger
         """
-        LOG.data(NO_CLIENT_ID, '_MQLightMessenger.get_remote_idle_timeout called')
+        LOG.data(
+            NO_CLIENT_ID, '_MQLightMessenger.get_remote_idle_timeout called')
         return self.remote_idle_timeout
 
     def set_remote_idle_timeout(self, interval, callback):

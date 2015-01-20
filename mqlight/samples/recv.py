@@ -24,73 +24,73 @@ COUNT = 0
 SERVICE = 'amqp://localhost'
 
 parser = argparse.ArgumentParser(
-    description='Connect to an MQ Light server and subscribe to the ' + \
-    'specified topic.')
+    description='Connect to an MQ Light server and subscribe to the '
+                'specified topic.')
 parser.add_argument(
     '-s',
     '--service',
     dest='service',
     type=str,
     default=SERVICE,
-    help='service to connect to, for example: amqp://user:password@host:5672 ' +
-        'or amqps://host:5671 to use SSL/TLS (default: %(default)s)')
+    help='service to connect to, for example: amqp://user:password@host:5672 '
+         'or amqps://host:5671 to use SSL/TLS (default: %(default)s)')
 parser.add_argument(
     '-c',
     '--trust-certificate',
     dest='trust_certificate',
     type=str,
     default=None,
-    help='use the certificate contained in FILE (in PEM or DER format) to ' +
-        'validate the identify of the server. The connection must be secured ' +
-        'with SSL/TLS (e.g. the service URL must start with "amqps://")')
+    help='use the certificate contained in FILE (in PEM or DER format) to '
+         'validate the identify of the server. The connection must be secured '
+         'with SSL/TLS (e.g. the service URL must start with "amqps://")')
 parser.add_argument(
     '-t',
     '--topic-pattern',
     dest='topic_pattern',
     type=str,
     default='public',
-    help='subscribe to receive messages matching TOPIC_PATTERN '+
-        '(default: %(default)s)')
+    help='subscribe to receive messages matching TOPIC_PATTERN '
+         '(default: %(default)s)')
 parser.add_argument(
     '-i',
     '--id',
     dest='client_id',
     type=str,
     default=None,
-    help='the ID to use when connecting to MQ Light ' +
-        '(default: send_[0-9a-f]{7})')
+    help='the ID to use when connecting to MQ Light '
+         '(default: send_[0-9a-f]{7})')
 parser.add_argument(
     '--destination-ttl',
     dest='destination_ttl',
     type=int,
     default=None,
-    help='set destination time-to-live to DESTINATION_TTL seconds ' +
-        '(default: %(default)s)')
+    help='set destination time-to-live to DESTINATION_TTL seconds '
+         '(default: %(default)s)')
 parser.add_argument(
     '-n',
     '--share-name',
     dest='share_name',
     type=str,
     default=None,
-    help='optionally, subscribe to a shared destination using SHARE_NAME as ' +
-        'the share name.')
+    help='optionally, subscribe to a shared destination using SHARE_NAME as '
+         'the share name.')
 parser.add_argument(
     '-f',
     '--file',
     dest='file',
     type=str,
     default=None,
-    help='write the payload of the next message received to FILE ' +
-        '(overwriting previous file contents then end. (default is to print ' +
-        'messages to stdout)')
+    help='write the payload of the next message received to FILE '
+         '(overwriting previous file contents then end. (default is to print '
+         'messages to stdout)')
 parser.add_argument(
     '-d',
     '--delay',
     dest='delay',
     type=int,
     default=0,
-    help='delay for DELAY seconds each time a message is received. (default: ' +
-        '%(default)s)')
+    help='delay for DELAY seconds each time a message is received. (default: '
+         '%(default)s)')
 parser.add_argument(
     '--verbose',
     dest='verbose',
@@ -121,6 +121,7 @@ if args.trust_certificate is not None:
     else:
         service = 'amqps://localhost'
 
+
 def subscribe(err):
     print 'Connected to ' + client.get_service() + ' using client-id ' + \
         client.get_id()
@@ -129,11 +130,12 @@ def subscribe(err):
         'autoConfirm': False
     }
     if args.destination_ttl is not None:
-        options['ttl'] = args.destination_ttl
+        options['destination_ttl'] = args.destination_ttl
     if args.delay is not None and args.delay > 0:
         options['credit'] = 1
     client.add_listener(mqlight.MESSAGE, message)
     client.subscribe(topic_pattern, share, options, subscribed)
+
 
 def subscribed(err, pattern, share):
     if err is not None:
@@ -145,6 +147,7 @@ def subscribed(err, pattern, share):
             print 'Subscribed to share: ' + share + ' pattern: ' + pattern
         else:
             print 'Subscribed to pattern: ' + pattern
+
 
 def message(data, delivery):
     global COUNT
@@ -165,6 +168,7 @@ def message(data, delivery):
             time.sleep(delay)
         delivery['message']['confirm_delivery'](None)
 
+
 def error(err):
     print '*** error ***'
     if err:
@@ -172,6 +176,7 @@ def error(err):
     client.stop()
     print 'Exiting.'
     exit(1)
+
 
 def malformed(data, delivery):
     print '*** received malformed message ***'

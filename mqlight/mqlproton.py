@@ -163,8 +163,8 @@ class _MQLightMessage(object):
             #   key_type   : the type of the delivery annotation key (always
             #   'symbol')
             #   value      : the value of the delivery annotation entry
-            #   value_type : the type of the delivery annotation value ('symbol'
-            #   ,'string', or 'int32')
+            #   value_type : the type of the delivery annotation value
+            #   ('symbol' ,'string', or 'int32')
             result = []
             while True:
                 if cproton.pn_data_type(anno) == cproton.PN_SYMBOL:
@@ -373,8 +373,8 @@ class _MQLightMessenger(object):
 
         # If the proton messenger already exists and has been stopped then free
         # it so that we can recreate a new instance.  This situation can arise
-        # if the messenger link is closed by the remote end instead of a call to
-        # stop()
+        # if the messenger link is closed by the remote end instead of a call
+        # to stop()
         if self.messenger:
             stopped = cproton.pn_messenger_stopped(self.messenger)
             if stopped:
@@ -919,7 +919,6 @@ class _MQLightMessenger(object):
                                     cproton.pn_messenger_error(
                                         self.messenger))
                                 _MQLightMessenger._raise_error(text)
-
 
         LOG.exit('_MQLightMessenger.Unsubscribe', NO_CLIENT_ID, True)
         return True

@@ -15,7 +15,8 @@ disclosure restricted by GSA ADP Schedule Contract with
 IBM Corp.
 </copyright>
 """
-import logging, logging.handlers
+import logging
+import logging.handlers
 import os
 import sys
 import signal
@@ -23,7 +24,6 @@ import socket
 import platform
 import threading
 import mqlight
-import traceback
 
 ENTRY_IND = '>-----------------------------------------------------------'
 EXIT_IND = '<-----------------------------------------------------------'
@@ -81,8 +81,8 @@ DEFAULT_LEVEL = 'FFDC'
 # MQLIGHT_PYTHON_LOG_STREAM=stdout.
 DEFAULT_STREAM = 'stderr'
 
-# Set the amount of message data that will get logged. The default is 10 Mbytes,
-# but this can be altered by setting the environment variable
+# Set the amount of message data that will get logged. The default is 10
+# megabytes, but this can be altered by setting the environment variable
 # MQLIGHT_PYTHON_LOG_SIZE to a different number.
 DEFAULT_LOG_SIZE = 10 * 1000 * 1000
 
@@ -91,10 +91,13 @@ NO_CLIENT_ID = '*'
 IS_WIN = os.name == 'nt'
 LOCK = threading.Lock()
 
+
 def get_logger(name):
     return MQLightLog(name)
 
+
 class MQLightLog(object):
+
     """
     Python logging wrapper
     """
@@ -130,7 +133,6 @@ class MQLightLog(object):
             '%(lvl)s %(message)s')
 
         self._set_handler(self._stream, self._log_size, formatter)
-
 
     def _signal_handler(self, signum, frame):
         """
@@ -233,7 +235,7 @@ class MQLightLog(object):
     def _exit_level(self, level, name, client_id, return_code):
         with LOCK:
             msg = '{0} {1} rc={2}'.format(
-                EXIT_IND[0:len(self._stack)-1], name, return_code)
+                EXIT_IND[0:len(self._stack) - 1], name, return_code)
             keys = {'client_id': client_id}
             self._write(level, msg, keys)
             last = self._stack[len(self._stack) - 1]
@@ -268,35 +270,36 @@ class MQLightLog(object):
         self._write(FFDC, 'IBM MQ Light Python Client', keys)
         self._write(FFDC, HEADER_BANNER, keys)
         self._write(FFDC,
-            'Host Name:        {0}'.format(socket.gethostname()), keys)
+                    'Host Name:        {0}'.format(socket.gethostname()), keys)
         self._write(FFDC,
-            'Operating System: {0}'.format(platform.platform()), keys)
+                    'Operating System: {0}'.format(platform.platform()), keys)
         self._write(FFDC,
-            'Architecture:     {0}'.format(platform.machine()), keys)
+                    'Architecture:     {0}'.format(platform.machine()), keys)
         self._write(FFDC,
-            'Python Version:   {0}'.format(sys.version), keys)
+                    'Python Version:   {0}'.format(sys.version), keys)
         self._write(FFDC,
-            'Python Arguments: {0}'.format(sys.argv), keys)
+                    'Python Arguments: {0}'.format(sys.argv), keys)
         self._write(FFDC,
-            'Module Name:      {0}'.format(mqlight.__name__), keys)
+                    'Module Name:      {0}'.format(mqlight.__name__), keys)
         self._write(FFDC,
-            'Module Version:   {0}'.format(mqlight.__version__), keys)
+                    'Module Version:   {0}'.format(mqlight.__version__), keys)
         if not IS_WIN:
             self._write(FFDC,
-                'User Id:          {0}'.format(os.getuid()), keys)
+                        'User Id:          {0}'.format(os.getuid()), keys)
             self._write(FFDC,
-                'Group Id:         {0}'.format(os.getgid()), keys)
+                        'Group Id:         {0}'.format(os.getgid()), keys)
         self._write(FFDC,
-            'Log Level:        {0}'.format(self._level), keys)
+                    'Log Level:        {0}'.format(self._level), keys)
         self._write(FFDC,
-            'Function:         {0}'.format(opts['fnc']), keys)
+                    'Function:         {0}'.format(opts['fnc']), keys)
         self._write(FFDC,
-            'Probe Id:         {0}'.format(opts['probe_id']), keys)
+                    'Probe Id:         {0}'.format(opts['probe_id']), keys)
         self._write(FFDC,
-            'FFDC Sequence:    {0}'.format(opts['ffdc_sequence']), keys)
+                    'FFDC Sequence:    {0}'.format(opts['ffdc_sequence']),
+                    keys)
         self._write(FFDC, HEADER_BANNER, keys)
         self._write(FFDC,
-            'Data:             {0}'.format(data), keys)
+                    'Data:             {0}'.format(data), keys)
 
     def debug(self, client_id, message):
         keys = {'client_id': client_id}
@@ -323,4 +326,3 @@ class MQLightLog(object):
             type(err).__name__, name, err)
         keys = {'client_id': client_id}
         self._write(ERROR, msg, keys)
-

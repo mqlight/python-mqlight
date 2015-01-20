@@ -395,7 +395,7 @@ class TestUnsubscribe(unittest.TestCase):
                         self.assertTrue(False)
                 else:
                     print 'testing ' + str(test['ttl'])
-                    with self.assertRaises(ValueError):
+                    with self.assertRaises(mqlexc.RangeError):
                         client.unsubscribe('testpattern', opts)
 
             client.stop()
