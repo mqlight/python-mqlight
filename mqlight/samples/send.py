@@ -223,7 +223,10 @@ def error(err):
     print 'Exiting.'
     exit(1)
 
-# Create client to connect to server with
-client = mqlight.Client(service, client_id, security_options)
-client.add_listener(mqlight.STARTED, started)
-client.add_listener(mqlight.ERROR, error)
+try:
+    # Create client to connect to server with
+    client = mqlight.Client(service, client_id, security_options)
+    client.add_listener(mqlight.STARTED, started)
+    client.add_listener(mqlight.ERROR, error)
+except Exception as exc:
+    print exc

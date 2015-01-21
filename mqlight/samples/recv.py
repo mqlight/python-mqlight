@@ -183,7 +183,10 @@ def malformed(data, delivery):
     print 'data: ', data
     print 'delivery: ', delivery
 
-client = mqlight.Client(service, client_id, security_options)
-client.add_listener(mqlight.STARTED, subscribe)
-client.add_listener(mqlight.ERROR, error)
-client.add_listener(mqlight.MALFORMED, malformed)
+try:
+    client = mqlight.Client(service, client_id, security_options)
+    client.add_listener(mqlight.STARTED, subscribe)
+    client.add_listener(mqlight.ERROR, error)
+    client.add_listener(mqlight.MALFORMED, malformed)
+except Exception as exc:
+    print exc
