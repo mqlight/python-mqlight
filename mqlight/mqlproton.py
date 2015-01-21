@@ -754,6 +754,39 @@ class _MQLightMessenger(object):
         LOG.exit('_MQLightMessenger.settle', NO_CLIENT_ID, True)
         return True
 
+    def settled(self, message):
+        """
+        Checks if a message has been settled
+        """
+        LOG.entry('_MQLightMessenger.settled', NO_CLIENT_ID)
+        LOG.parms(NO_CLIENT_ID, 'message:', message)
+        # throw exception if not connected
+        if self.messenger is None:
+            raise mqlexc.NetworkError('Not connected')
+        
+        delivery = cproton.pn_messenger_delivery(
+            self.messenger, 
+            message.tracker)
+        
+        # For incoming messages, if we haven't already settled it, block for a 
+        # while until we *think* the settlement disposition has been 
+        # communicated over the network. We detect that by querying 
+        # pn_transport_quiesced which should return True once all pending output
+        # has been written to the wire.
+        settled = True
+        if delivery and cproton.pn_link_is_receiver(
+            cproton.pn_delivery_link(delivery)):
+            session = cproton.pn_link_session(
+                cproton.pn_delivery_link(delivery))
+            if session:
+                connection = cproton.pn_session_connection(session)
+                if connection:
+                    transport = cproton.pn_connection_transport(connection)
+                    if transport:
+                        if not cproton.pn_transport_quiesced(transport):
+                            settled = False
+        LOG.exit('_MQLightMessenger.settled', NO_CLIENT_ID, settled)
+
     def accept(self, message):
         """
         Accepts a message

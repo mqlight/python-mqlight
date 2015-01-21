@@ -127,10 +127,10 @@ def subscribe(err):
         client.get_id()
     options = {
         'qos': mqlight.QOS_AT_LEAST_ONCE,
-        'autoConfirm': False
+        'auto_confirm': False
     }
     if args.destination_ttl is not None:
-        options['destination_ttl'] = args.destination_ttl
+        options['ttl'] = args.destination_ttl
     if args.delay is not None and args.delay > 0:
         options['credit'] = 1
     client.add_listener(mqlight.MESSAGE, message)
@@ -158,7 +158,7 @@ def message(data, delivery):
         print 'Writing message data to ' + args.file
         with open(args.file, 'wb') as f:
             f.write(''.join(data))
-        delivery['message']['confirm_delivery'](None)
+        delivery['message']['confirm_delivery']()
         client.stop()
     else:
         print data
@@ -166,7 +166,7 @@ def message(data, delivery):
             print delivery
         if delay > 0:
             time.sleep(delay)
-        delivery['message']['confirm_delivery'](None)
+        delivery['message']['confirm_delivery']()
 
 
 def error(err):

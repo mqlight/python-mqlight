@@ -534,9 +534,9 @@ class Client(object):
                 only one instance can be connected to the MQ Light service at a
                 given moment in time. If two instances of Client have the same
                 id and both try to connect then the first instance to establish
-                its connection is diconnected in favour of the second instance.
+                its connection is disconnected in favour of the second instance.
                 If this property is not specified then the client will generate
-                a probabalistically unique ID.
+                a probabilistically unique ID.
             security_options: Optional; Any required security options for
                 user name/password authentication and SSL.
         Returns:
@@ -991,7 +991,7 @@ class Client(object):
                    self.state == STARTED):
                 sub = self._queued_subscriptions.pop(0)
                 if sub['noop']:
-                    # no-op so just trigger the callback wihtout actually
+                    # no-op so just trigger the callback without actually
                     # subscribing
                     if sub['callback']:
                         sub['callback'](
@@ -1011,7 +1011,7 @@ class Client(object):
             while len(self._queued_unsubscribes) > 0 and self.state == STARTED:
                 sub = self._queued_unsubscribes.pop(0)
                 if sub['noop']:
-                    # no-op so just trigger the callback wihtout actually
+                    # no-op so just trigger the callback without actually
                     # unsubscribing
                     if sub['callback']:
                         sub['callback'](
@@ -1093,7 +1093,7 @@ class Client(object):
         LOG.parms(self._id, 'msg:', msg)
         msg.connection_id = self._connection_id
 
-        # If body is a JSON'ified object, try to parse it back to a js obj
+        # If body is a JSON'ified object, try to parse it
         if msg.content_type == 'application/json':
             try:
                 data = loads(msg.body)
@@ -1154,33 +1154,16 @@ class Client(object):
             msg = None
             LOG.exit_often('Client._process_message', self._id, None)
             return
-
-        def _confirm(delivery, msg=None):
-            LOG.entry(
-                'Client._process_message._confirm',
-                self._id)
-            LOG.data(self._id, 'delivery:', delivery)
-            if self.is_stopped():
-                err = mqlexc.NetworkError('not started')
-                LOG.error(
-                    'Client._process_message._confirm',
-                    self._id,
-                    err)
-                raise err
-            if msg:
-                # Also throw mqlexc.NetworkError if the client has
-                # disconnected at some point since this particular
-                # message was received
-                if msg.connection_id != self._connection_id:
-                    err = mqlexc.NetworkError(
-                        'Client has reconnected since this '
-                        'message was received')
-                    LOG.error(
-                        'Client._process_message._confirm',
-                        self._id,
-                        err)
-                    raise err
-                self._messenger.settle(msg)
+        
+        confirmation = {
+            'delivery_confirmed': False,
+        }
+        
+        def _still_settling(subscription, msg):
+            LOG.entry_often('Client._process_message._still_settling', self._id)
+            
+            settled = self._messenger.settled(msg) 
+            if settled:
                 subscription['unconfirmed'] -= 1
                 subscription['confirmed'] += 1
                 LOG.data(
@@ -1204,10 +1187,54 @@ class Client(object):
                         self._service + '/' + msg.link_address,
                         subscription['confirmed'])
                     subscription['confirmed'] = 0
+            else:
+                timer = threading.Timer(
+                    0.1, 
+                    _still_settling, [subscription, msg])
+                timer.start()
+            LOG.exit_often(
+                'Client._process_message._still_settling', 
+                self._id,
+                not settled)
+        
+        def _confirm():
+            LOG.entry(
+                'Client._process_message._confirm',
+                self._id)
+            LOG.data(self._id, 'delivery:', delivery)
+            LOG.data(self._id, 'msg:', msg)
+            LOG.data(
+                self._id, 
+                'delivery_confirmed:', 
+                confirmation['delivery_confirmed'])
+            if self.is_stopped():
+                err = mqlexc.NetworkError('not started')
+                LOG.error(
+                    'Client._process_message._confirm',
+                    self._id,
+                    err)
+                raise err
+            if not confirmation['delivery_confirmed'] and msg:
+                # Also throw mqlexc.NetworkError if the client has
+                # disconnected at some point since this particular
+                # message was received
+                if msg.connection_id != self._connection_id:
+                    err = mqlexc.NetworkError(
+                        'Client has reconnected since this '
+                        'message was received')
+                    LOG.error(
+                        'Client._process_message._confirm',
+                        self._id,
+                        err)
+                    raise err
+                confirmation['delivery_confirmed'] = True
+                self._messenger.settle(msg)
+                _still_settling(subscription, msg)
             LOG.exit(
                 'Client._process_message._confirm',
                 self._id,
                 None)
+            
         delivery = {
             'message': {
                 'topic': topic,
@@ -2341,14 +2368,14 @@ class Client(object):
                     raise mqlexc.RangeError(
                         'options[\'qos\'] value {0} is invalid must evaluate '
                         'to 0 or 1'.format(options['qos']))
-            if 'autoConfirm' in options:
-                if options['autoConfirm'] in (True, False):
-                    auto_confirm = options['autoConfirm']
+            if 'auto_confirm' in options:
+                if options['auto_confirm'] in (True, False):
+                    auto_confirm = options['auto_confirm']
                 else:
                     raise TypeError(
-                        'options[\'autoConfirm\'] value {0} is invalid must '
+                        'options[\'auto_confirm\'] value {0} is invalid must ' \
                         'evaluate to True or False'.format(
-                            options['autoConfirm']))
+                            options['auto_confirm']))
             if 'ttl' in options:
                 try:
                     ttl = int(options['ttl'])
