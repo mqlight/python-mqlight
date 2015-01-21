@@ -763,19 +763,20 @@ class _MQLightMessenger(object):
         # throw exception if not connected
         if self.messenger is None:
             raise mqlexc.NetworkError('Not connected')
-        
+
         delivery = cproton.pn_messenger_delivery(
-            self.messenger, 
+            self.messenger,
             message.tracker)
-        
-        # For incoming messages, if we haven't already settled it, block for a 
-        # while until we *think* the settlement disposition has been 
-        # communicated over the network. We detect that by querying 
-        # pn_transport_quiesced which should return True once all pending output
-        # has been written to the wire.
+
+        # For incoming messages, if we haven't already settled it, block for a
+        # while until we *think* the settlement disposition has been
+        # communicated over the network. We detect that by querying
+        # pn_transport_quiesced which should return True once all pending
+        # output has been written to the wire.
         settled = True
-        if delivery and cproton.pn_link_is_receiver(
-            cproton.pn_delivery_link(delivery)):
+        if (delivery and
+                cproton.pn_link_is_receiver(
+                    cproton.pn_delivery_link(delivery))):
             session = cproton.pn_link_session(
                 cproton.pn_delivery_link(delivery))
             if session:

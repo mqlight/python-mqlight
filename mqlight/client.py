@@ -24,19 +24,19 @@ import codecs
 import httplib
 import socket
 import traceback
-import mqlightexceptions as mqlexc
-from mqlightlog import get_logger, NO_CLIENT_ID
+from . import mqlightexceptions as mqlexc
+from .mqlightlog import get_logger, NO_CLIENT_ID
 from json import loads
 from random import random
 from urlparse import urlparse
 from urllib import quote
 from pkg_resources import get_distribution
 
-CMD = sys.argv[0].split(' ')
-if 'unittest' in CMD:
-    import stubproton as mqlightproton
+CMD = ' '.join(sys.argv)
+if 'setup.py test' in CMD or 'unittest' in CMD:
+    from . import stubproton as mqlightproton
 else:
-    import mqlightproton
+    from . import mqlightproton
 
 __version__ = get_distribution('mqlight').version
 
@@ -534,9 +534,9 @@ class Client(object):
                 only one instance can be connected to the MQ Light service at a
                 given moment in time. If two instances of Client have the same
                 id and both try to connect then the first instance to establish
-                its connection is disconnected in favour of the second instance.
-                If this property is not specified then the client will generate
-                a probabilistically unique ID.
+                its connection is disconnected in favour of the second
+                instance. If this property is not specified then the client
+                will generate a probabilistically unique ID.
             security_options: Optional; Any required security options for
                 user name/password authentication and SSL.
         Returns:
@@ -1154,15 +1154,16 @@ class Client(object):
             msg = None
             LOG.exit_often('Client._process_message', self._id, None)
             return
-        
+
         confirmation = {
             'delivery_confirmed': False,
         }
-        
+
         def _still_settling(subscription, msg):
-            LOG.entry_often('Client._process_message._still_settling', self._id)
-            
-            settled = self._messenger.settled(msg) 
+            LOG.entry_often('Client._process_message._still_settling',
+                            self._id)
+
+            settled = self._messenger.settled(msg)
             if settled:
                 subscription['unconfirmed'] -= 1
                 subscription['confirmed'] += 1
@@ -1189,14 +1190,14 @@ class Client(object):
                     subscription['confirmed'] = 0
             else:
                 timer = threading.Timer(
-                    0.1, 
+                    0.1,
                     _still_settling, [subscription, msg])
                 timer.start()
             LOG.exit_often(
-                'Client._process_message._still_settling', 
+                'Client._process_message._still_settling',
                 self._id,
                 not settled)
-        
+
         def _confirm():
             LOG.entry(
                 'Client._process_message._confirm',
@@ -1204,8 +1205,8 @@ class Client(object):
             LOG.data(self._id, 'delivery:', delivery)
             LOG.data(self._id, 'msg:', msg)
             LOG.data(
-                self._id, 
-                'delivery_confirmed:', 
+                self._id,
+                'delivery_confirmed:',
                 confirmation['delivery_confirmed'])
             if self.is_stopped():
                 err = mqlexc.NetworkError('not started')
@@ -1234,7 +1235,7 @@ class Client(object):
                 'Client._process_message._confirm',
                 self._id,
                 None)
-            
+
         delivery = {
             'message': {
                 'topic': topic,
@@ -1934,13 +1935,7 @@ class Client(object):
         LOG.parms(self._id, 'type(data)', str(type(data)))
         LOG.parms(self._id, 'data:', data)
 
-        # Validate the remaining optional parameters, assigning local variables
-        # to the appropriate parameter
-        if options is not None and callback is None:
-            if hasattr(options, '__call__'):
-                callback = options
-                options = None
-
+        # Validate the options parameter, when specified
         if options is not None:
             if isinstance(options, dict):
                 LOG.parms(self._id, 'options:', options)
@@ -1977,6 +1972,8 @@ class Client(object):
             raise mqlexc.InvalidArgumentError(
                 'callback must be specified when options[\'qos\'] value of 1 '
                 '(at least once) is specified')
+
+        LOG.parms(self._id, 'callback:', callback)
 
         # Ensure we have attempted a connect
         if self.is_stopped():
@@ -2320,24 +2317,6 @@ class Client(object):
 
         topic_pattern = str(topic_pattern)
         LOG.parms(self._id, 'topic_pattern:', topic_pattern)
-
-        if options is None and callback is None:
-            if hasattr(share, '__call__'):
-                callback = share
-                share = None
-            elif not isinstance(share, str):
-                options = share
-                share = None
-        elif callback is None:
-            if hasattr(options, '__call__'):
-                callback = options
-                if not isinstance(share, str):
-                    options = share
-                    share = None
-                else:
-                    options = None
-
-        LOG.parms(self._id, 'callback:', callback)
         original_share_value = share
         if share:
             share = str(share)
@@ -2356,6 +2335,7 @@ class Client(object):
                 LOG.parms(self._id, 'options:', options)
             else:
                 raise TypeError('options must be a dict')
+
         qos = QOS_AT_MOST_ONCE
         auto_confirm = True
         ttl = 0
@@ -2373,7 +2353,7 @@ class Client(object):
                     auto_confirm = options['auto_confirm']
                 else:
                     raise TypeError(
-                        'options[\'auto_confirm\'] value {0} is invalid must ' \
+                        'options[\'auto_confirm\'] value {0} is invalid must '
                         'evaluate to True or False'.format(
                             options['auto_confirm']))
             if 'ttl' in options:
@@ -2395,10 +2375,10 @@ class Client(object):
                         'options[\'credit\'] value {0} is invalid must be an '
                         'unsigned integer number'.format(options['credit']))
 
-        LOG.parms(self._id, 'share:', share)
-
         if callback and not hasattr(callback, '__call__'):
             raise TypeError('callback must be a function')
+
+        LOG.parms(self._id, 'callback:', callback)
 
         # Ensure we have attempted a connect
         if self.is_stopped():
@@ -2420,6 +2400,7 @@ class Client(object):
                     self._queued_subscriptions.remove(sub)
 
             self._queued_subscriptions.append({
+                'noop': False,  # FIXME: implement noop behaviour for subscribe
                 'address': subscription_address,
                 'qos': qos,
                 'auto_confirm': auto_confirm,
@@ -2462,6 +2443,7 @@ class Client(object):
             if _should_reconnect(err):
                 LOG.data(self._id, 'queued subscription and calling reconnect')
                 self._queued_subscriptions.append({
+                    'noop': False,  # FIXME: implement noop behaviour
                     'address': subscription_address,
                     'qos': qos,
                     'auto_confirm': auto_confirm,
@@ -2550,30 +2532,6 @@ class Client(object):
 
         topic_pattern = str(topic_pattern)
 
-        # Two or three arguments are the interesting cases - the rules we use
-        # to disambiguate are:
-        #   1) If the last argument is a function - it's the callback
-        #   2) If we are unsure if something is the share or the options then
-        #      a) It's the share if it's a String
-        #      b) It's the options if it's an Object
-        #      c) If it's neither of the above, then it's the share
-        #         (and convert it to a String).
-        if options is None and callback is None:
-            if hasattr(share, '__call__'):
-                callback = share
-                share = None
-            elif not isinstance(share, str):
-                options = share
-                share = None
-        elif callback is None:
-            if hasattr(options, '__call__'):
-                callback = options
-                if not isinstance(share, str):
-                    options = share
-                    share = None
-                else:
-                    options = None
-
         original_share_value = share
         if share:
             share = str(share)
@@ -2636,8 +2594,9 @@ class Client(object):
                 break
         if not subscribed:
             for sub in self._queued_subscriptions:
-                if sub['address'] == subscription_address and sub[
-                        'share'] == original_share_value and not sub['noop']:
+                if (sub['address'] == subscription_address and
+                        sub['share'] == original_share_value and
+                        not sub['noop']):
                     subscribed = True
                     break
 
