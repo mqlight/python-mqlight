@@ -30,9 +30,9 @@ EXIT_IND = '<-----------------------------------------------------------'
 HEADER_BANNER = '+---------------------------------------------------------' + \
     '---------------------+'
 
-ALL = 0
-EXIT_OFTEN = 1
-ENTRY_OFTEN = 2
+ALL = 100
+EXIT_OFTEN = 200
+ENTRY_OFTEN = 300
 DEBUG = 500
 EMIT = 800
 DATA = 1000
@@ -203,7 +203,7 @@ class MQLightLog(object):
             self._log.addHandler(self._fe)
 
     def _write(self, level, message, extra):
-        if self._log.getEffectiveLevel() <= level:
+        if self._level <= level:
             extra['lvl'] = LEVELS.get(level)
             self._log.log(level, message, extra=extra)
 

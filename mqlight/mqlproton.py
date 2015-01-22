@@ -787,6 +787,7 @@ class _MQLightMessenger(object):
                         if not cproton.pn_transport_quiesced(transport):
                             settled = False
         LOG.exit('_MQLightMessenger.settled', NO_CLIENT_ID, settled)
+        return settled
 
     def accept(self, message):
         """
