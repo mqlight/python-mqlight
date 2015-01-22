@@ -15,6 +15,8 @@ disclosure restricted by GSA ADP Schedule Contract with
 IBM Corp.
 </copyright>
 """
+from __future__ import print_function
+import sys
 import argparse
 import mqlight
 import time
@@ -120,11 +122,8 @@ if args.trust_certificate is not None:
     security_options['ssl_trust_certificate'] = args.trust_certificate
     if args.service != SERVICE:
         if not service.startswith('amqps'):
-            print '*** error ***'
-            print 'The service URL must start with "amqps://" when using a ' + \
-                'trust certificate.'
-            print 'Exiting.'
-            exit(1)
+            error('The service URL must start with "amqps://" when using a '
+                  'trust certificate.')
     else:
         service = 'amqps://localhost'
 
@@ -137,10 +136,7 @@ if args.file is not None:
             message.append(byte)
             byte = f.read(1)
     if len(message) == 0:
-        print '*** error ***'
-        print 'An error happened while reading ' + args.file
-        print 'Exiting.'
-        exit(1)
+        error('An error happened while reading {0}'.format(args.file))
     else:
         messages.append(message)
 
@@ -158,9 +154,9 @@ def started(err):
     """
     Started callback
     """
-    print 'Connected to ' + client.get_service() + ' using client-id ' + \
-        client.get_id()
-    print 'Sending to: ' + topic
+    print('Connected to {0} using client-id {1}'.format(
+        client.get_service(), client.get_id()))
+    print('Sending to: {0}'.format(topic))
     send_message()
 
 
@@ -189,7 +185,7 @@ def send_message():
         if sequence and args.file is None:
             global SEQUENCE
             SEQUENCE += 1
-            body = str(SEQUENCE) + ': ' + body
+            body = '{0}: {1}'.format(SEQUENCE, body)
         if client.send(topic=topic, data=body, options=options, callback=sent):
             send_next_message()
         else:
@@ -204,29 +200,28 @@ def sent(err, topic, data, options):
     Message sent callback
     """
     if err:
-        print 'Problem with send request: ' + str(err)
-        client.stop()
-        exit(1)
+        error('Problem with send request: {0}'.format(err))
     else:
         if data:
-            print data
+            print(data)
 
 
 def error(err):
     """
     Error callback
     """
-    print '*** error ***'
+    print('*** error ***', file=sys.stderr)
     if err:
-        print err
-    client.stop()
-    print 'Exiting.'
+        print(err, file=sys.stderr)
+    if client:
+        client.stop()
+    print('Exiting.')
     exit(1)
 
+client = None
 try:
-    # Create client to connect to server with
     client = mqlight.Client(service, client_id, security_options)
     client.add_listener(mqlight.STARTED, started)
     client.add_listener(mqlight.ERROR, error)
 except Exception as exc:
-    print exc
+    error(exc)

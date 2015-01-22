@@ -15,6 +15,8 @@ disclosure restricted by GSA ADP Schedule Contract with
 IBM Corp.
 </copyright>
 """
+from __future__ import print_function
+import sys
 import argparse
 import mqlight
 import time
@@ -113,18 +115,18 @@ if args.trust_certificate is not None:
     security_options['ssl_trust_certificate'] = args.trust_certificate
     if args.service != SERVICE:
         if not service.startswith('amqps'):
-            print '*** error ***'
-            print 'The service URL must start with "amqps://" when using a ' + \
-                'trust certificate.'
-            print 'Exiting.'
-            exit(1)
+            error('The service URL must start with "amqps://" when using a '
+                  'trust certificate.')
     else:
         service = 'amqps://localhost'
 
 
 def subscribe(err):
-    print 'Connected to ' + client.get_service() + ' using client-id ' + \
-        client.get_id()
+    """
+    Started callback
+    """
+    print('Connected to {0} using client-id {1}'.format(
+        client.get_service(), client.get_id()))
     options = {
         'qos': mqlight.QOS_AT_LEAST_ONCE,
         'auto_confirm': False
@@ -138,55 +140,68 @@ def subscribe(err):
 
 
 def subscribed(err, pattern, share):
+    """
+    Subscribe callback
+    """
     if err is not None:
-        print '*** error ***'
-        print 'problem with subscribe request ', err
-        exit(1)
+        error('problem with subscribe request {0}'.format(err))
     if pattern:
         if share:
-            print 'Subscribed to share: ' + share + ' pattern: ' + pattern
+            print('Subscribed to share: {0}, pattern: {1}'.format(
+                share, pattern))
         else:
-            print 'Subscribed to pattern: ' + pattern
+            print('Subscribed to pattern: {0}'.format(pattern))
 
 
 def message(data, delivery):
+    """
+    Message callback
+    """
     global COUNT
     COUNT += 1
     if verbose:
-        print '# received message ', COUNT
+        print('# received message {0}'.format(COUNT))
     if args.file:
-        print 'Writing message data to ' + args.file
+        print('Writing message data to {0}'.format(args.file))
         with open(args.file, 'wb') as f:
             f.write(''.join(data))
         delivery['message']['confirm_delivery']()
         client.stop()
     else:
-        print data
+        print(data)
         if verbose:
-            print delivery
+            print(delivery)
         if delay > 0:
             time.sleep(delay)
         delivery['message']['confirm_delivery']()
 
 
 def error(err):
-    print '*** error ***'
+    """
+    Error callback
+    """
+    print('*** error ***', file=sys.stderr)
     if err:
-        print err
-    client.stop()
-    print 'Exiting.'
+        print(err, file=sys.stderr)
+    if client:
+        client.stop()
+    print('Exiting.')
     exit(1)
 
 
 def malformed(data, delivery):
-    print '*** received malformed message ***'
-    print 'data: ', data
-    print 'delivery: ', delivery
+    """
+    Malformed callback
+    """
+    print('*** received malformed message ***', file=sys.stderr)
+    print('data: {0}'.format(data), file=sys.stderr)
+    print('delivery: {0}'.format(delivery), file=sys.stderr)
 
+client = None
 try:
     client = mqlight.Client(service, client_id, security_options)
     client.add_listener(mqlight.STARTED, subscribe)
     client.add_listener(mqlight.ERROR, error)
     client.add_listener(mqlight.MALFORMED, malformed)
 except Exception as exc:
-    print exc
+    error(exc)
