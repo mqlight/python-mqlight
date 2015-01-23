@@ -2064,7 +2064,8 @@ class Client(object):
                                 complete = False
                                 err = None
                                 if in_flight['qos'] == QOS_AT_MOST_ONCE:
-                                    complete = (status == 'UNKNOWN')
+                                    complete = (status == 'UNKNOWN' or
+                                                status == 'SETTLED')
                                 else:
                                     if status in ('ACCEPTED', 'SETTLED'):
                                         self._messenger.settle(
@@ -2607,6 +2608,7 @@ class Client(object):
             raise err
 
         def queue_unsubscribe():
+            """Add the unsubscribe request to the internal queue"""
             # check if there's a queued subscribe for the same topic, if so
             # mark that as a no-op operation, so the callback is called but a
             # no-op takes place on reconnection

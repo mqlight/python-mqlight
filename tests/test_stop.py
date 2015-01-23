@@ -19,6 +19,7 @@ import unittest
 from mock import Mock, patch
 import mqlight
 
+
 @patch('mqlight.mqlightproton._MQLightMessenger.connect', Mock(return_value=None))
 # @patch('mqlight.mqlightproton._MQLightMessenger.get_last_error_text', Mock(return_value=None))
 class TestStop(unittest.TestCase):
@@ -77,5 +78,3 @@ class TestStop(unittest.TestCase):
 
 if __name__ == 'main':
     unittest.main()
-
-

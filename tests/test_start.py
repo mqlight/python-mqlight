@@ -47,16 +47,17 @@ class TestStart(unittest.TestCase):
         event and the callback passed into client.start(...) are driven.
         """
         client = mqlight.Client('amqp://host:1234')
+
         def started(err):
             self.assertEqual(err, None)
             self.assertEqual(client.get_state(), mqlight.STARTED)
+
             def stopped(err):
                 self.assertEqual(err, None)
                 self.assertEqual(client.get_state(), mqlight.STOPPED)
             client.stop(stopped)
         client.add_listener(mqlight.STARTED, started)
         self.assertIn(client.get_state(), (mqlight.STARTED, mqlight.STARTING))
-
 
     def test_start_argument_is_function(self):
         """

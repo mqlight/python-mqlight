@@ -15,6 +15,7 @@ disclosure restricted by GSA ADP Schedule Contract with
 IBM Corp.
 </copyright>
 """
+import sys
 from setuptools import setup, find_packages, Extension
 from setuptools.command.test import test as TestCommand
 from codecs import open as codecs_open
@@ -58,16 +59,23 @@ class PyTest(TestCommand):
     """TestCommand to run suite using py.test"""
     test_args = []
     test_suite = True
+    pytest_args = []
+
+    def initialize_options(self):
+        TestCommand.initialize_options(self)
 
     def finalize_options(self):
         TestCommand.finalize_options(self)
 
     def run_tests(self):
+        environ['MQLIGHT_PYTHON_LOG'] = 'ALL'
         import pytest
-        self.test_args.insert(0, '--junitxml=junit.xml')
-        self.test_args.insert(0, '--timeout=10')
-        pytest.main(self.test_args)
-        pytest.main(['--pep8', '-m pep8', 'mqlight/'])
+        # self.pytest_args.insert(0, 'tests/test_send.py')
+        self.pytest_args.insert(0, '--junitxml=junit.xml')
+        self.pytest_args.insert(0, '--timeout=10')
+        errno = pytest.main(self.pytest_args)
+        errno += pytest.main(['--pep8', '-m pep8', 'mqlight/'])
+        sys.exit(errno)
 
 setup(
     name='mqlight',

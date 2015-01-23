@@ -21,6 +21,7 @@ from mock import Mock
 import mqlight
 import mqlight.mqlightexceptions as mqlexc
 
+
 class TestSubscribe(unittest.TestCase):
 
     def test_subscribe_too_few_arguments(self):
@@ -29,6 +30,7 @@ class TestSubscribe(unittest.TestCase):
         (no arguments) causes an Error to be thrown.
         """
         client = mqlight.Client('amqp://host')
+
         def started(err):
             with self.assertRaises(TypeError):
                 client.subscribe()
@@ -41,6 +43,7 @@ class TestSubscribe(unittest.TestCase):
         an Error
         """
         client = mqlight.Client('amqp://host')
+
         def started(err):
             callback = Mock()
             with self.assertRaises(TypeError):
@@ -54,6 +57,7 @@ class TestSubscribe(unittest.TestCase):
         function
         """
         client = mqlight.Client('amqp://host')
+
         def started(err):
             with self.assertRaises(TypeError):
                 client.subscribe('/foo1', 'share', {}, 7)
@@ -72,6 +76,7 @@ class TestSubscribe(unittest.TestCase):
         successfully) specifies the right number of arguments
         """
         client = mqlight.Client('amqp://host')
+
         def started(err):
             callback = Mock()
             client.subscribe('/foo', callback)
@@ -86,6 +91,7 @@ class TestSubscribe(unittest.TestCase):
         unsuccessfully) specifies the right number of arguments
         """
         client = mqlight.Client('amqp://host')
+
         def started(err):
             callback = Mock()
             client.subscribe('/bad', 'share', callback)
@@ -102,6 +108,7 @@ class TestSubscribe(unittest.TestCase):
         stopped state, throws an Error
         """
         client = mqlight.Client('amqp://host')
+
         def stopped(err):
             with self.assertRaises(mqlexc.MQLightError):
                 client.subscribe('/foo')
@@ -114,6 +121,7 @@ class TestSubscribe(unittest.TestCase):
         client object that the method was invoked on
         """
         client = mqlight.Client('amqp://host')
+
         def started(err):
             self.assertEqual(client.subscribe('/foo'), client)
             client.stop()
@@ -138,6 +146,7 @@ class TestSubscribe(unittest.TestCase):
             {'valid': True, 'pattern': '/+'}
         ]
         client = mqlight.Client('amqp://host')
+
         def started(err):
             for test in data:
                 if test['valid']:
@@ -164,6 +173,7 @@ class TestSubscribe(unittest.TestCase):
             {'valid': False, 'share': ':a'}
         ]
         client = mqlight.Client('amqp://host')
+
         def started(err):
             for test in data:
                 if test['valid']:
@@ -194,17 +204,20 @@ class TestSubscribe(unittest.TestCase):
             {'valid': True, 'options': {'a': 1}}
         ]
         client = mqlight.Client('amqp://host')
+
         def started(err):
             for i in range(len(data)):
                 test = data[i]
                 if test['valid']:
                     try:
-                        client.subscribe('/foo' + str(i), 'share', test['options'], func)
+                        client.subscribe(
+                            '/foo' + str(i), 'share', test['options'], func)
                     except Exception:
                         self.assertTrue(False)
                 else:
                     with self.assertRaises(TypeError):
-                        client.subscribe('/foo' + str(i), 'share', test['options'], func)
+                        client.subscribe(
+                            '/foo' + str(i), 'share', test['options'], func)
             client.stop()
         client.add_listener(mqlight.STARTED, started)
 
@@ -221,15 +234,16 @@ class TestSubscribe(unittest.TestCase):
             {'valid': False, 'qos': '1'},
             {'valid': False, 'qos': 2},
             {'valid': True, 'qos': 0},
-            {'valid': True, 'qos': 9-8},
+            {'valid': True, 'qos': 9 - 8},
             {'valid': True, 'qos': mqlight.QOS_AT_MOST_ONCE},
             {'valid': True, 'qos': mqlight.QOS_AT_LEAST_ONCE}
         ]
         client = mqlight.Client('amqp://host')
+
         def started(err):
             for i in range(len(data)):
                 test = data[i]
-                opts = { 'qos': test['qos'] }
+                opts = {'qos': test['qos']}
                 if test['valid']:
                     try:
                         client.subscribe('/foo' + str(i), opts)
@@ -267,6 +281,7 @@ class TestSubscribe(unittest.TestCase):
             {'valid': True, 'opts': {'auto_confirm': tmp}}
         ]
         client = mqlight.Client('amqp://host')
+
         def started(err):
             for i in range(len(data)):
                 test = data[i]
@@ -299,14 +314,15 @@ class TestSubscribe(unittest.TestCase):
             {'valid': False, 'ttl': ''},
             {'valid': True, 'ttl': 0},
             {'valid': True, 'ttl': 1},
-            {'valid': True, 'ttl': 9-8},
+            {'valid': True, 'ttl': 9 - 8},
             {'valid': True, 'ttl': 9007199254740992}
         ]
         client = mqlight.Client('amqp://host')
+
         def started(err):
             for i in range(len(data)):
                 test = data[i]
-                opts = { 'ttl': test['ttl'] }
+                opts = {'ttl': test['ttl']}
                 if test['valid']:
                     try:
                         client.subscribe('/foo' + str(i), opts)
@@ -321,5 +337,3 @@ class TestSubscribe(unittest.TestCase):
 
 if __name__ == 'main':
     unittest.main()
-
-

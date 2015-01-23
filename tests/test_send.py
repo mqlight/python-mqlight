@@ -1,5 +1,3 @@
-import unittest
-import threading
 """
 <copyright
 notice="lm-source-program"
@@ -17,47 +15,67 @@ disclosure restricted by GSA ADP Schedule Contract with
 IBM Corp.
 </copyright>
 """
+# pylint: disable=bare-except,broad-except,invalid-name,no-self-use
+# pylint: disable=too-many-public-methods,unused-argument
+import threading
+import pytest
 from mock import Mock
 import mqlight
 import mqlight.mqlightexceptions as mqlexc
 
-class TestSend(unittest.TestCase):
+
+class TestSend(object):
+
     """
     Unit tests for client.send()
     """
+    TEST_TIMEOUT = 10.0
 
     def test_send_too_few_arguments(self):
         """
         Test a calling client.send(...) with too few arguments
         (no arguments) causes an Error to be thrown.
         """
-        client = mqlight.Client('amqp://host')
-        def started(value):
-            with self.assertRaises(TypeError) as te:
+        # pylint: disable=no-value-for-parameter
+        test_is_done = threading.Event()
+
+        def started(err, service):
+            """started listener"""
+            with pytest.raises(TypeError):
                 client.send()
-            with self.assertRaises(TypeError) as te:
+            with pytest.raises(TypeError):
                 client.send('topic')
             client.stop()
-        client.add_listener(mqlight.STARTED, started)
+            test_is_done.set()
+        client = mqlight.Client('amqp://host', callback=started)
+        done = test_is_done.wait(self.TEST_TIMEOUT)
+        assert done
 
     def test_send_too_many_arguments(self):
         """
         Test that calling client.send(...) with too many arguments raises
         an Error
         """
-        client = mqlight.Client('amqp://host')
-        def started(err):
+        # pylint: disable=too-many-function-args
+        test_is_done = threading.Event()
+
+        def started(err, service):
+            """started listener"""
             callback = Mock()
-            with self.assertRaises(TypeError) as e:
+            with pytest.raises(TypeError):
                 client.send('topic', 'message', {}, callback, 'extra')
             client.stop()
-        client.add_listener(mqlight.STARTED, started)
+            test_is_done.set()
+        client = mqlight.Client('amqp://host', callback=started)
+        done = test_is_done.wait(self.TEST_TIMEOUT)
+        assert done
 
     def test_send_topics(self):
         """
         Test a variety of valid and invalid topic names. Invalid topic names
         should result in the client.send(...) method throwing a TypeError.
         """
+        test_is_done = threading.Event()
         func = Mock()
         data = [
             {'valid': False, 'topic': ''},
@@ -67,20 +85,24 @@ class TestSend(unittest.TestCase):
             {'valid': True, 'topic': 'kittens'},
             {'valid': True, 'topic': '/kittens'}
         ]
-        client = mqlight.Client('amqp://host')
-        def started(err):
-            for test in data:
-                if test['valid']:
-                    try:
+
+        def started(err, service):
+            """started listener"""
+            try:
+                for test in data:
+                    if test['valid']:
                         client.send(test['topic'], 'message')
-                    except Exception as exc:
-                        print exc
-                        self.assertTrue(False)
-                else:
-                    with self.assertRaises(mqlexc.InvalidArgumentError) as ve:
-                        client.send(test['topic'], 'message')
-            client.stop()
-        client.add_listener(mqlight.STARTED, started)
+                    else:
+                        with pytest.raises(mqlexc.InvalidArgumentError):
+                            client.send(test['topic'], 'message')
+            except Exception as exc:
+                pytest.fail('Unexpected Exception ' + str(exc))
+            finally:
+                client.stop()
+                test_is_done.set()
+        client = mqlight.Client('amqp://host', callback=started)
+        done = test_is_done.wait(self.TEST_TIMEOUT)
+        assert done
 
     def test_send_callback(self):
         """
@@ -88,47 +110,57 @@ class TestSend(unittest.TestCase):
         the function is invoked when the send operation completes, and this
         references the client.
         """
+        test_is_done = threading.Event()
         data = [
             {'topic': 'topic1', 'data': 'data1', 'options': {}},
             {'topic': 'topic2', 'data': 'data2', 'options': None}
         ]
-        def timeout():
-            self.assertTrue(False)
-        timer = threading.Timer(5, timeout)
-        timer.daemon = True
-        client = mqlight.Client('amqp://host')
-        self.count = 0
-        def callback(err, topic, d, options):
-            self.assertEqual(err, None)
-            self.assertEqual(topic, data[self.count]['topic'])
-            self.assertEqual(d, data[self.count]['data'])
-            self.assertEqual(options, data[self.count]['options'])
-            self.count += 1
-            print 'COUNT ' + str(self.count)
-            if self.count == len(data):
-                timer.cancel()
-                client.stop()
 
-        def started(err):
-            for test in data:
-                try:
-                    client.send(test['topic'], test['data'], test['options'], callback)
-                except Exception as exc:
-                    self.assertTrue(False)
-        client.add_listener(mqlight.STARTED, started)
+        def started(err, service):
+            """started listener"""
+            def send_callback(err, topic, d, options):
+                """send callback"""
+                opts = data.pop()
+                assert err is None
+                assert topic == opts['topic']
+                assert d == opts['data']
+                assert options == opts['options']
+                if len(data) == 0:
+                    client.stop()
+                    test_is_done.set()
+
+            try:
+                for test in reversed(data):
+                    client.send(test['topic'],
+                                test['data'],
+                                test['options'],
+                                send_callback)
+            except Exception as exc:
+                pytest.fail('Unexpected Exception ' + str(exc))
+        client = mqlight.Client('amqp://host',
+                                client_id='test_send_callback',
+                                callback=started)
+        done = test_is_done.wait(self.TEST_TIMEOUT)
+        assert done
 
     def test_send_fail_if_stopped(self):
         """
         Tests that client.send(...) throws and error if it is called while the
         client is in stopped state.
         """
-        client = mqlight.Client('amqp://host')
-        def started(err):
+        test_is_done = threading.Event()
+
+        def started(err, service):
+            """started listener"""
             def stopped(err):
-                with self.assertRaises(mqlexc.StoppedError):
+                """stopped listener"""
+                with pytest.raises(mqlexc.StoppedError):
                     client.send('topic', 'message')
+                test_is_done.set()
             client.stop(stopped)
-        client.add_listener(mqlight.STARTED, started)
+        client = mqlight.Client('amqp://host', callback=started)
+        done = test_is_done.wait(self.TEST_TIMEOUT)
+        assert done
 
     def test_send_options(self):
         """
@@ -138,6 +170,7 @@ class TestSend(unittest.TestCase):
         accepted when it is of the correct type. The actual validation of
         individual options will be in separate tests
         """
+        test_is_done = threading.Event()
         func = Mock()
         data = [
             {'valid': False, 'options': ''},
@@ -149,26 +182,31 @@ class TestSend(unittest.TestCase):
             {'valid': True, 'options': {}},
             {'valid': True, 'options': {'a': 1}}
         ]
-        client = mqlight.Client('amqp://host')
-        def started(err):
-            for test in data:
-                if test['valid']:
-                    try:
-                        client.send('test', 'message', test['options'], func)
-                    except Exception as exc:
-                        self.assertTrue(False)
-                else:
 
-                    with self.assertRaises(TypeError) as ve:
+        def started(err, service):
+            """started listener"""
+            try:
+                for test in data:
+                    if test['valid']:
                         client.send('test', 'message', test['options'], func)
+                    else:
+                        with pytest.raises(TypeError):
+                            client.send('test', 'message', test['options'],
+                                        func)
+            except Exception as exc:
+                pytest.fail('Unexpected Exception ' + str(exc))
             client.stop()
-        client.add_listener(mqlight.STARTED, started)
+            test_is_done.set()
+        client = mqlight.Client('amqp://host', callback=started)
+        done = test_is_done.wait(self.TEST_TIMEOUT)
+        assert done
 
     def test_send_qos(self):
         """
         Test a variety of valid and invalid QoS values.  Invalid QoS values
         should result in the client.send(...) method throwing a ValueError.
         """
+        test_is_done = threading.Event()
         func = Mock()
         data = [
             {'valid': False, 'qos': ''},
@@ -178,30 +216,35 @@ class TestSend(unittest.TestCase):
             {'valid': False, 'qos': 2},
             {'valid': True, 'qos': 0},
             {'valid': True, 'qos': 1},
-            {'valid': True, 'qos': 9-8},
+            {'valid': True, 'qos': 9 - 8},
             {'valid': True, 'qos': mqlight.QOS_AT_MOST_ONCE},
             {'valid': True, 'qos': mqlight.QOS_AT_LEAST_ONCE}
         ]
-        client = mqlight.Client('amqp://host')
-        def started(err):
-            for test in data:
-                opts = { 'qos': test['qos'] }
-                if test['valid']:
-                    try:
+
+        def started(err, service):
+            """started listener"""
+            try:
+                for test in data:
+                    opts = {'qos': test['qos']}
+                    if test['valid']:
                         client.send('test', 'message', opts, func)
-                    except Exception as exc:
-                        print exc
-                        self.assertTrue(False)
-                else:
-                    with self.assertRaises(mqlexc.InvalidArgumentError):
-                        client.send('test', 'message', opts, func)
+                    else:
+                        with pytest.raises(Exception):
+                            client.send('test', 'message', opts, func)
+            except Exception as exc:
+                pytest.fail('Unexpected Exception ' + str(exc) + ' for qos ' +
+                            str(test['qos']))
             client.stop()
-        client.add_listener(mqlight.STARTED, started)
+            test_is_done.set()
+        client = mqlight.Client('amqp://host', callback=started)
+        done = test_is_done.wait(self.TEST_TIMEOUT)
+        assert done
 
     def test_send_qos_function(self):
         """
         Test that a function is required when QoS is 1.
         """
+        test_is_done = threading.Event()
         func = Mock()
         data = [
             {'valid': False, 'qos': 1, 'callback': None},
@@ -209,22 +252,22 @@ class TestSend(unittest.TestCase):
             {'valid': True, 'qos': 0, 'callback': None},
             {'valid': True, 'qos': 0, 'callback': func}
         ]
-        client = mqlight.Client('amqp://host')
-        def started(err):
-            for test in data:
-                opts = { 'qos': test['qos'] }
-                if test['valid']:
-                    try:
+
+        def started(err, service):
+            """started listener"""
+            try:
+                for test in data:
+                    opts = {'qos': test['qos']}
+                    if test['valid']:
                         client.send('test', 'message', opts, test['callback'])
-                    except Exception:
-                        self.assertTrue(False)
-                else:
-                    with self.assertRaises(mqlexc.InvalidArgumentError):
-                        client.send('test', 'message', opts, test['callback'])
+                    else:
+                        with pytest.raises(mqlexc.InvalidArgumentError):
+                            client.send('test', 'message', opts,
+                                        test['callback'])
+            except Exception as exc:
+                pytest.fail('Unexpected Exception ' + str(exc))
             client.stop()
-        client.add_listener(mqlight.STARTED, started)
-
-if __name__ == 'main':
-    unittest.main()
-
-
+            test_is_done.set()
+        client = mqlight.Client('amqp://host', callback=started)
+        done = test_is_done.wait(self.TEST_TIMEOUT)
+        assert done

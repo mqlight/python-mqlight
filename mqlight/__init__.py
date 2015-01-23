@@ -15,11 +15,11 @@ disclosure restricted by GSA ADP Schedule Contract with
 IBM Corp.
 </copyright>
 """
-from mqlight import __version__, Client
-from mqlight import QOS_AT_MOST_ONCE, QOS_AT_LEAST_ONCE
-from mqlight import STARTED, STARTING, STOPPED, STOPPING, RESTARTED, \
+from .mqlight import __version__, Client
+from .mqlight import QOS_AT_MOST_ONCE, QOS_AT_LEAST_ONCE
+from .mqlight import STARTED, STARTING, STOPPED, STOPPING, RESTARTED, \
     RETRYING, ERROR, MESSAGE, MALFORMED, DRAIN
-from mqlightexceptions import MQLightError, InvalidArgumentError, \
+from .mqlightexceptions import MQLightError, InvalidArgumentError, \
     RangeError, NetworkError, ReplacedError, LocalReplacedError, \
     SecurityError, StoppedError, SubscribedError, UnsubscribedError
 
