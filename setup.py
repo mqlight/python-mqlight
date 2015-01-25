@@ -70,7 +70,7 @@ class PyTest(TestCommand):
     def run_tests(self):
         environ['MQLIGHT_PYTHON_LOG'] = 'ALL'
         import pytest
-        # self.pytest_args.insert(0, 'tests/test_send.py')
+        # self.pytest_args.insert(0, 'tests/test_unsubscribe.py')
         self.pytest_args.insert(0, '--junitxml=junit.xml')
         self.pytest_args.insert(0, '--timeout=10')
         errno = pytest.main(self.pytest_args)

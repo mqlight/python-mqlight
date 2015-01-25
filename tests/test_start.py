@@ -15,66 +15,73 @@ disclosure restricted by GSA ADP Schedule Contract with
 IBM Corp.
 </copyright>
 """
-import unittest
+# pylint: disable=bare-except,broad-except,invalid-name,no-self-use
+# pylint: disable=too-many-public-methods,unused-argument
+import pytest
+import threading
 from mock import Mock, patch
 import mqlight
-import mqlight.mqlightexceptions as mqlexc
-
-CONNECT_STATUS = 0
+from mqlight.stubproton import _MQLightMessenger
 
 
 def side_effect(service, ssl_trust_certificate, ssl_verify_name):
+    """mock side effect function"""
     if 'bad' in service.netloc:
         raise TypeError('bad service ' + service.netloc)
-    if CONNECT_STATUS != 0:
-        raise mqlight.MQLightError('connect error ' + str(CONNECT_STATUS))
-    pass
 
 
 @patch('mqlight.mqlightproton._MQLightMessenger.connect',
        Mock(side_effect=side_effect))
 @patch('mqlight.mqlightproton._MQLightMessenger.get_remote_idle_timeout',
        Mock(return_value=0))
-class TestStart(unittest.TestCase):
+class TestStart(object):
 
-    def setUp(self):
-        global CONNECT_STATUS
-        CONNECT_STATUS = 0
+    """
+    Unit tests for client.start()
+    """
+    TEST_TIMEOUT = 10.0
 
     def test_successful_start_stop(self):
         """
         Test a successful start / stop, ensuring that both the 'started'
         event and the callback passed into client.start(...) are driven.
         """
-        client = mqlight.Client('amqp://host:1234')
+        test_is_done = threading.Event()
 
-        def started(err):
-            self.assertEqual(err, None)
-            self.assertEqual(client.get_state(), mqlight.STARTED)
+        def started(err, service):
+            """started listener"""
+            assert err is None
+            assert client.get_state() == mqlight.STARTED
 
             def stopped(err):
-                self.assertEqual(err, None)
-                self.assertEqual(client.get_state(), mqlight.STOPPED)
+                """stopped listener"""
+                assert err is None
+                assert client.get_state() == mqlight.STOPPED
+                test_is_done.set()
             client.stop(stopped)
-        client.add_listener(mqlight.STARTED, started)
-        self.assertIn(client.get_state(), (mqlight.STARTED, mqlight.STARTING))
+        client = mqlight.Client('amqp://host:1234',
+                                'test_successful_start_stop',
+                                callback=started)
+        assert client.get_state() in (mqlight.STARTED, mqlight.STARTING)
 
     def test_start_argument_is_function(self):
         """
         Test that when an argument is specified to the client.start(...)
         function it must be a callback (e.g. of type function)
         """
-        client = mqlight.Client('amqp://host:1234')
-        self.assertRaises(TypeError, client.start, 1234)
+        client = mqlight.Client('amqp://host:1234',
+                                'test_start_argument_is_function')
+        pytest.raises(TypeError, client.start, 1234)
 
     def test_start_method_returns_client(self):
         """
         Test that the start(...) method returns the instance of the client
         that it is invoked on.
         """
-        client = mqlight.Client('amqp://host:1234')
+        client = mqlight.Client('amqp://host:1234',
+                                'test_start_method_returns_client')
         result = client.start()
-        self.assertEqual(client, result)
+        assert client == result
         client.stop()
 
     def test_start_when_already_started(self):
@@ -83,53 +90,64 @@ class TestStart(unittest.TestCase):
         other than to callback any supplied callback function to indicate
         success.
         """
+        test_is_done = threading.Event()
+
         def started(err, cli):
-            self.assertEqual(err, None)
-            self.assertEqual(cli.get_state(), mqlight.STARTED)
+            """started listener"""
+            assert err is None
+            assert cli.get_state() == mqlight.STARTED
 
             def inner_started(err):
-                self.assertEqual(err, None)
-                self.assertFalse(
-                    True,
-                    'should not receive started event if already started')
+                """inner started listener"""
+                assert err is None
+                pytest.fail('should not receive started event if already '
+                            'started')
             cli.add_listener(mqlight.STARTED, inner_started)
             cli.start()
 
             def stopped(err):
-                self.assertEqual(err, None)
+                """stopped listener"""
+                assert err is None
+                test_is_done.set()
             cli.stop(stopped)
-        mqlight.Client('amqp://host:1234', callback=started)
+        mqlight.Client('amqp://host:1234',
+                       'test_start_when_already_started',
+                       callback=started)
+        done = test_is_done.wait(self.TEST_TIMEOUT)
+        assert done
 
     def test_start_too_many_arguments(self):
         """
         Test that if too many arguments are supplied to start - then an
         exception is raised.
         """
-        client = mqlight.Client('amqp://host')
+        client = mqlight.Client('amqp://host',
+                                'test_start_too_many_arguments')
         callback = Mock()
-        self.assertRaises(TypeError, client.start, callback, 'gooseberry')
+        pytest.raises(TypeError, client.start, callback, 'gooseberry')
 
     def test_start_retry(self):
         """
         Tests that calling start on an endpoint that is currently down retries
         until successful.
         """
+        test_is_done = threading.Event()
         required_connect_status = 2
-        global CONNECT_STATUS
-        CONNECT_STATUS = required_connect_status
-        client = mqlight.Client('amqp://host:1234')
+        _MQLightMessenger.set_connect_status(required_connect_status)
 
         def error_callback(err):
-            global CONNECT_STATUS
-            CONNECT_STATUS -= 1
-        client.add_listener(mqlight.ERROR, error_callback)
+            """error callback"""
+            _MQLightMessenger.set_connect_status(
+                _MQLightMessenger.get_connect_status() - 1)
 
-        def start_callback(err):
-            self.assertEqual(err, None)
-            global CONNECT_STATUS
-            self.assertEqual(CONNECT_STATUS, 0)
+        def start_callback(err, service):
+            """started listener"""
+            assert err is None
+            assert _MQLightMessenger.get_connect_status() == 0
             client.stop()
-        client.start(start_callback)
-
-if __name__ == 'main':
-    unittest.main()
+            test_is_done.set()
+        client = mqlight.Client('amqp://host:1234', 'test_start_retry',
+                                callback=start_callback)
+        client.add_listener(mqlight.ERROR, error_callback)
+        done = test_is_done.wait(self.TEST_TIMEOUT)
+        assert done

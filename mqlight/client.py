@@ -35,8 +35,12 @@ from pkg_resources import get_distribution
 CMD = ' '.join(sys.argv)
 if 'setup.py test' in CMD or 'unittest' in CMD:
     from . import stubproton as mqlightproton
+    # The connection retry interval in seconds
+    CONNECT_RETRY_INTERVAL = 1
 else:
     from . import mqlightproton
+    # The connection retry interval in seconds
+    CONNECT_RETRY_INTERVAL = 10
 
 __version__ = get_distribution('mqlight').version
 
@@ -47,9 +51,6 @@ LOG = get_logger(__name__)
 
 # Regex for the client id
 INVALID_CLIENT_ID_REGEX = r'[^A-Za-z0-9%/\._]'
-
-# The connection retry interval in seconds
-CONNECT_RETRY_INTERVAL = 10
 
 STARTED = 'started'
 STARTING = 'starting'

@@ -188,6 +188,14 @@ class _MQLightMessenger(object):
         SEND_STATUS = 'SETTLED'
 
     @staticmethod
+    def get_connect_status():
+        """
+        Retrieve the proton connection status.
+        """
+        global CONNECT_STATUS
+        return CONNECT_STATUS
+
+    @staticmethod
     def set_connect_status(status):
         """
         Override the proton connection status.
