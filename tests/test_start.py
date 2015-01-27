@@ -48,7 +48,7 @@ class TestStart(object):
         """
         test_is_done = threading.Event()
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             assert err is None
             assert client.get_state() == mqlight.STARTED
@@ -61,7 +61,7 @@ class TestStart(object):
             client.stop(stopped)
         client = mqlight.Client('amqp://host:1234',
                                 'test_successful_start_stop',
-                                callback=started)
+                                on_started=started)
         assert client.get_state() in (mqlight.STARTED, mqlight.STARTING)
 
     def test_start_argument_is_function(self):
@@ -84,38 +84,6 @@ class TestStart(object):
         assert client == result
         client.stop()
 
-    def test_start_when_already_started(self):
-        """
-        Tests that calling start on an already start client has no effect
-        other than to callback any supplied callback function to indicate
-        success.
-        """
-        test_is_done = threading.Event()
-
-        def started(err, cli):
-            """started listener"""
-            assert err is None
-            assert cli.get_state() == mqlight.STARTED
-
-            def inner_started(err):
-                """inner started listener"""
-                assert err is None
-                pytest.fail('should not receive started event if already '
-                            'started')
-            cli.add_listener(mqlight.STARTED, inner_started)
-            cli.start()
-
-            def stopped(err):
-                """stopped listener"""
-                assert err is None
-                test_is_done.set()
-            cli.stop(stopped)
-        mqlight.Client('amqp://host:1234',
-                       'test_start_when_already_started',
-                       callback=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
-
     def test_start_too_many_arguments(self):
         """
         Test that if too many arguments are supplied to start - then an
@@ -135,19 +103,20 @@ class TestStart(object):
         required_connect_status = 2
         _MQLightMessenger.set_connect_status(required_connect_status)
 
-        def error_callback(err):
-            """error callback"""
-            _MQLightMessenger.set_connect_status(
-                _MQLightMessenger.get_connect_status() - 1)
+        def state_changed(state, err):
+            if state == mqlight.ERROR:
+                """error callback"""
+                _MQLightMessenger.set_connect_status(
+                    _MQLightMessenger.get_connect_status() - 1)
 
-        def start_callback(err, service):
+        def started(err):
             """started listener"""
             assert err is None
             assert _MQLightMessenger.get_connect_status() == 0
             client.stop()
             test_is_done.set()
         client = mqlight.Client('amqp://host:1234', 'test_start_retry',
-                                callback=start_callback)
-        client.add_listener(mqlight.ERROR, error_callback)
+                                on_started=started,
+                                on_state_changed=state_changed)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done

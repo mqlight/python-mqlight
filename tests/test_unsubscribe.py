@@ -55,19 +55,19 @@ class TestUnsubscribe(object):
         """
         # pylint: disable=too-many-function-args
         test_is_done = threading.Event()
-        client = mqlight.Client(
-            'amqp://host',
-            'test_unsubscribe_too_many_arguments')
-        func = Mock()
 
-        def started(_):
+        def started(err):
             """started listener"""
             client.subscribe('/foo', 'share1')
             with pytest.raises(TypeError):
                 client.unsubscribe('/foo', 'share1', {}, func, 'stowaway')
             client.stop()
             test_is_done.set()
-        client.add_listener(mqlight.STARTED, started)
+        client = mqlight.Client(
+            'amqp://host',
+            'test_unsubscribe_too_many_arguments',
+            on_started=started)
+        func = Mock()
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -77,10 +77,6 @@ class TestUnsubscribe(object):
         function
         """
         test_is_done = threading.Event()
-        client = mqlight.Client(
-            'amqp://host',
-            'test_unsubscribe_callback_must_be_function'
-        )
 
         def started(err):
             """started listener"""
@@ -90,17 +86,23 @@ class TestUnsubscribe(object):
                 client.unsubscribe('/foo1', 'share', {}, 7)
 
             client.subscribe('/foo2')
-            client.unsubscribe('/foo2', callback=func)
+            client.unsubscribe('/foo2', on_unsubscribed=func)
 
             client.subscribe('/foo3', 'share')
-            client.unsubscribe('/foo3', 'share', callback=func)
+            client.unsubscribe('/foo3', 'share', on_unsubscribed=func)
 
             client.subscribe('/foo4', 'share')
-            client.unsubscribe('/foo4', 'share', {}, callback=func)
+            client.unsubscribe('/foo4', 'share', {}, on_unsubscribed=func)
 
             client.stop()
             test_is_done.set()
-        client.add_listener(mqlight.STARTED, started)
+
+        client = mqlight.Client(
+            'amqp://host',
+            'test_unsubscribe_callback_must_be_function',
+            on_started=started
+        )
+
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -110,9 +112,6 @@ class TestUnsubscribe(object):
         completes successfully) specifies the right number of arguments.
         """
         test_is_done = threading.Event()
-        client = mqlight.Client(
-            'amqp://host',
-            'test_unsubscribe_ok_callback')
 
         def started(err):
             """started listener"""
@@ -124,8 +123,8 @@ class TestUnsubscribe(object):
 
             def sub(err, topic, share):
                 """subscribe callback"""
-                client.unsubscribe('/foo', callback=unsub)
-            client.subscribe('/foo', callback=sub)
+                client.unsubscribe('/foo', on_unsubscribed=unsub)
+            client.subscribe('/foo', on_subscribed=sub)
 
             def unsub2(err, topic, share):
                 """unsubscribe callback"""
@@ -137,10 +136,13 @@ class TestUnsubscribe(object):
 
             def sub2(err, topic, share):
                 """subscribe callback"""
-                client.unsubscribe('/foo2', 'share', callback=unsub2)
-            client.subscribe('/foo2', 'share', callback=sub2)
+                client.unsubscribe('/foo2', 'share', on_unsubscribed=unsub2)
+            client.subscribe('/foo2', 'share', on_subscribed=sub2)
 
-        client.add_listener(mqlight.STARTED, started)
+        client = mqlight.Client(
+            'amqp://host',
+            'test_unsubscribe_ok_callback',
+            on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -157,8 +159,7 @@ class TestUnsubscribe(object):
             with pytest.raises(mqlexc.StoppedError):
                 client.unsubscribe('/foo')
             test_is_done.set()
-        client.add_listener(mqlight.STOPPED, stopped)
-        client.stop()
+        client.stop(stopped)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -168,21 +169,22 @@ class TestUnsubscribe(object):
         Error.
         """
         test_is_done = threading.Event()
-        client = mqlight.Client(
-            'amqp://host',
-            'test_unsubscribe_when_not_subscribed')
 
         def started(err):
             """started listener"""
             subscribe_event = threading.Event()
-            client.subscribe('/bar',
-                             callback=lambda _x, _y, _z: subscribe_event.set())
+            client.subscribe(
+                '/bar',
+                on_subscribed=lambda _x, _y, _z: subscribe_event.set())
             assert subscribe_event.wait(2.0)
             with pytest.raises(mqlexc.UnsubscribedError):
                 client.unsubscribe('/foo')
             client.stop()
             test_is_done.set()
-        client.add_listener(mqlight.STARTED, started)
+        client = mqlight.Client(
+            'amqp://host',
+            'test_unsubscribe_when_not_subscribed',
+            on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -193,9 +195,6 @@ class TestUnsubscribe(object):
         purposes).
         """
         test_is_done = threading.Event()
-        client = mqlight.Client(
-            'amqp://host',
-            'test_unsubscribe_returns_client')
 
         def started(err):
             """started listener"""
@@ -203,7 +202,10 @@ class TestUnsubscribe(object):
             assert client.unsubscribe('/foo') == client
             client.stop()
             test_is_done.set()
-        client.add_listener(mqlight.STARTED, started)
+        client = mqlight.Client(
+            'amqp://host',
+            'test_unsubscribe_returns_client',
+            on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -228,8 +230,6 @@ class TestUnsubscribe(object):
             {'valid': True, 'pattern': '/+'}
         ]
 
-        client = mqlight.Client('amqp://host', 'test_unsubscribe_topics')
-
         def started(err):
             """started listener"""
             try:
@@ -245,8 +245,11 @@ class TestUnsubscribe(object):
             finally:
                 client.stop()
                 test_is_done.set()
+        client = mqlight.Client(
+            'amqp://host',
+            'test_unsubscribe_topics',
+            on_started=started)
 
-        client.add_listener(mqlight.STARTED, started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -264,8 +267,6 @@ class TestUnsubscribe(object):
             {'valid': False, 'share': ':a'}
         ]
 
-        client = mqlight.Client('amqp://host', 'test_unsubscribe_share_names')
-
         def started(err):
             """started listener"""
             try:
@@ -281,7 +282,11 @@ class TestUnsubscribe(object):
             finally:
                 client.stop()
                 test_is_done.set()
-        client.add_listener(mqlight.STARTED, started)
+        client = mqlight.Client(
+            'amqp://host',
+            'test_unsubscribe_share_names',
+            on_started=started)
+
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -308,8 +313,6 @@ class TestUnsubscribe(object):
             {'valid': True, 'options': {'a': 1}}
         ]
 
-        client = mqlight.Client('amqp://host', 'test_unsubscribe_options')
-
         def started(err):
             """started listener"""
             try:
@@ -331,7 +334,11 @@ class TestUnsubscribe(object):
             finally:
                 client.stop()
                 test_is_done.set()
-        client.add_listener(mqlight.STARTED, started)
+        client = mqlight.Client(
+            'amqp://host',
+            'test_unsubscribe_options',
+            on_started=started)
+
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -358,8 +365,6 @@ class TestUnsubscribe(object):
             {'valid': False, 'ttl': ''}
         ]
 
-        client = mqlight.Client('amqp://host', 'test_unsubscribe_ttl_validity')
-
         def started(err):
             """started listener"""
             try:
@@ -376,6 +381,10 @@ class TestUnsubscribe(object):
             finally:
                 client.stop()
                 test_is_done.set()
-        client.add_listener(mqlight.STARTED, started)
+        client = mqlight.Client(
+            'amqp://host',
+            'test_unsubscribe_ttl_validity',
+            on_started=started)
+
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done

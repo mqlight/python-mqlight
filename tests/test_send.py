@@ -39,7 +39,7 @@ class TestSend(object):
         # pylint: disable=no-value-for-parameter
         test_is_done = threading.Event()
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             with pytest.raises(TypeError):
                 client.send()
@@ -47,7 +47,7 @@ class TestSend(object):
                 client.send('topic')
             client.stop()
             test_is_done.set()
-        client = mqlight.Client('amqp://host', callback=started)
+        client = mqlight.Client('amqp://host', on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -59,14 +59,14 @@ class TestSend(object):
         # pylint: disable=too-many-function-args
         test_is_done = threading.Event()
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             callback = Mock()
             with pytest.raises(TypeError):
                 client.send('topic', 'message', {}, callback, 'extra')
             client.stop()
             test_is_done.set()
-        client = mqlight.Client('amqp://host', callback=started)
+        client = mqlight.Client('amqp://host', on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -86,7 +86,7 @@ class TestSend(object):
             {'valid': True, 'topic': '/kittens'}
         ]
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             try:
                 for test in data:
@@ -100,7 +100,7 @@ class TestSend(object):
             finally:
                 client.stop()
                 test_is_done.set()
-        client = mqlight.Client('amqp://host', callback=started)
+        client = mqlight.Client('amqp://host', on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -116,7 +116,7 @@ class TestSend(object):
             {'topic': 'topic2', 'data': 'data2', 'options': None}
         ]
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             def send_callback(err, topic, d, options):
                 """send callback"""
@@ -139,7 +139,7 @@ class TestSend(object):
                 pytest.fail('Unexpected Exception ' + str(exc))
         client = mqlight.Client('amqp://host',
                                 client_id='test_send_callback',
-                                callback=started)
+                                on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -150,7 +150,7 @@ class TestSend(object):
         """
         test_is_done = threading.Event()
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             def stopped(err):
                 """stopped listener"""
@@ -158,7 +158,7 @@ class TestSend(object):
                     client.send('topic', 'message')
                 test_is_done.set()
             client.stop(stopped)
-        client = mqlight.Client('amqp://host', callback=started)
+        client = mqlight.Client('amqp://host', on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -183,7 +183,7 @@ class TestSend(object):
             {'valid': True, 'options': {'a': 1}}
         ]
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             try:
                 for test in data:
@@ -197,7 +197,7 @@ class TestSend(object):
                 pytest.fail('Unexpected Exception ' + str(exc))
             client.stop()
             test_is_done.set()
-        client = mqlight.Client('amqp://host', callback=started)
+        client = mqlight.Client('amqp://host', on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -221,7 +221,7 @@ class TestSend(object):
             {'valid': True, 'qos': mqlight.QOS_AT_LEAST_ONCE}
         ]
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             try:
                 for test in data:
@@ -236,7 +236,7 @@ class TestSend(object):
                             str(test['qos']))
             client.stop()
             test_is_done.set()
-        client = mqlight.Client('amqp://host', callback=started)
+        client = mqlight.Client('amqp://host', on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -253,7 +253,7 @@ class TestSend(object):
             {'valid': True, 'qos': 0, 'callback': func}
         ]
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             try:
                 for test in data:
@@ -268,6 +268,6 @@ class TestSend(object):
                 pytest.fail('Unexpected Exception ' + str(exc))
             client.stop()
             test_is_done.set()
-        client = mqlight.Client('amqp://host', callback=started)
+        client = mqlight.Client('amqp://host', on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done

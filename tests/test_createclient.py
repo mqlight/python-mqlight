@@ -44,9 +44,6 @@ class TestCreateClient(object):
         test_is_done = threading.Event()
         client_id = 'test_golden_path'
         service = 'amqp://host:1234'
-        client = mqlight.Client(service, client_id)
-        assert client.get_state() in (mqlight.STARTING, mqlight.STARTED)
-        assert client.get_id() == client_id
 
         def started(value):
             """started listener"""
@@ -55,7 +52,13 @@ class TestCreateClient(object):
             assert client.get_service() == service
             client.stop()
             test_is_done.set()
-        client.add_listener(mqlight.STARTED, started)
+
+        client = mqlight.Client(
+            service=service,
+            client_id=client_id,
+            on_started=started)
+        assert client.get_state() in (mqlight.STARTING, mqlight.STARTED)
+        assert client.get_id() == client_id
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -197,13 +200,13 @@ class TestCreateClient(object):
         for opts in data:
             started_event = threading.Event()
 
-            def started(err, service):
+            def started(err):
                 """started listener"""
                 started_event.set()  # pylint: disable=cell-var-from-loop
             clients.append(mqlight.Client(
-                opts['uri'],
+                service=opts['uri'],
                 client_id=str(count),
-                callback=started))
+                on_started=started))
             assert started_event.wait(2.0)
             count += 1
             if count == len(data):
@@ -290,19 +293,17 @@ class TestCreateClient(object):
                 'ssl_trust_certificate': ssl_trust_certificate,
                 'ssl_verify_name': ssl_verify_name
             }
-            client = mqlight.Client(service, client_id, security_options)
 
-            def error(err):
-                """error listener"""
-                pytest.fail('Unexpected error event: ' + str(err))
-                client.del_listener(mqlight.STOPPED, Mock())
-                client.stop()
-                valid_certificate_fd.close()
-                os.remove('ValidCertificate')
-                bad_verify_fd.close()
-                os.remove('BadVerify')
-                test_is_done.set()
-            client.add_listener(mqlight.ERROR, error)
+            def state_changed(state, err):
+                if state == mqlight.ERROR:
+                    """error listener"""
+                    pytest.fail('Unexpected error event: ' + str(err))
+                    client.stop()
+                    valid_certificate_fd.close()
+                    os.remove('ValidCertificate')
+                    bad_verify_fd.close()
+                    os.remove('BadVerify')
+                    test_is_done.set()
 
             def stopped(err):
                 """stopped listener"""
@@ -316,18 +317,22 @@ class TestCreateClient(object):
                     ssl_data = data.pop()
                     valid_ssl_test(ssl_data['ssl_trust_certificate'],
                                    ssl_data['ssl_verify_name'])
-            client.add_listener(mqlight.STOPPED, stopped)
 
-            def start(err):
+            def started(err):
                 """started listener"""
                 assert err is None
-                client.stop()
-
-            client.start(start)
+                client.stop(stopped)
+            client = mqlight.Client(
+                service=service,
+                client_id=client_id,
+                security_options=security_options,
+                on_started=started,
+                on_state_changed=state_changed)
 
         ssl_data = data.pop()
-        valid_ssl_test(ssl_data['ssl_trust_certificate'],
-                       ssl_data['ssl_verify_name'])
+        valid_ssl_test(
+            ssl_data['ssl_trust_certificate'],
+            ssl_data['ssl_verify_name'])
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -362,9 +367,10 @@ class TestCreateClient(object):
                 'ssl_verify_name': ssl_verify_name
             }
 
-            def error(err):
-                """error listener"""
-                client.stop(callback=stopped)
+            def state_changed(state, err):
+                if state == mqlight.ERROR:
+                    """error listener"""
+                    client.stop(on_stopped=stopped)
 
             def stopped(err):
                 """stopped listener"""
@@ -382,7 +388,6 @@ class TestCreateClient(object):
 
             def started(err, service):
                 """started listener"""
-                client.del_listener(mqlight.STOPPED, Mock())
                 client.stop()
                 bad_certificate_fd.close()
                 os.remove('BadCertificate')
@@ -390,10 +395,12 @@ class TestCreateClient(object):
                 os.remove('BadVerify2')
                 pytest.fail('unexpected started event' + str(security_options))
                 test_is_done.set()
-            client = mqlight.Client(service, client_id, security_options,
-                                    callback=started)
-            client.add_listener(mqlight.ERROR, error)
-            # client.add_listener(mqlight.STOPPED, stopped)
+            client = mqlight.Client(
+                service=service,
+                client_id=client_id,
+                security_options=security_options,
+                on_started=started,
+                on_state_changed=state_changed)
 
         ssl_data = data.pop()
         invalid_ssl_test(ssl_data['ssl_trust_certificate'],
@@ -409,26 +416,27 @@ class TestCreateClient(object):
         test_is_done = threading.Event()
         opts = {'service': 'amqp://localhost', 'id': 'Aname'}
 
-        def client_a_start(err, service):
+        def client_a_start(err):
             """client a started listener"""
-            def client_b_start(err, service):
+            def client_b_start(err):
                 """client b started listener"""
                 client_b.stop()
                 assert True
 
             client_b = mqlight.Client(opts['service'],
                                       opts['id'],
-                                      callback=client_b_start)
+                                      on_started=client_b_start)
 
+        def client_a_state_changed(state, err):
+            if state == mqlight.ERROR:
+                """client a error listener"""
+                assert 'ReplacedError' in str(
+                    type(err)), 'expected ReplacedError'
+                test_is_done.set()
         client_a = mqlight.Client(opts['service'],
                                   opts['id'],
-                                  callback=client_a_start)
-
-        def client_a_error(err):
-            """client a error listener"""
-            assert 'ReplacedError' in str(type(err)), 'expected ReplacedError'
-            test_is_done.set()
-        client_a.add_listener(mqlight.ERROR, client_a_error)
+                                  on_started=client_a_start,
+                                  on_state_changed=client_a_state_changed)
 
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done

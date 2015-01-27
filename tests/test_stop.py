@@ -44,8 +44,7 @@ class TestStop(object):
         def stopped(err):
             """stopped listener"""
             test_is_done.set()
-        client.add_listener(mqlight.STOPPED, stopped)
-        client.stop()
+        client.stop(stopped)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
         assert client.get_state() == mqlight.STOPPED
@@ -89,14 +88,14 @@ class TestStop(object):
             assert client.get_state() == mqlight.STOPPED
             client.stop(second_callback)
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             assert err is None
             assert client.get_state() == mqlight.STARTED
             client.stop(first_callback)
         client = mqlight.Client('amqp://host:1234',
                                 'test_stop_when_already_stopped',
-                                callback=started)
+                                on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 

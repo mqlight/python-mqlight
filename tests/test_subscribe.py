@@ -39,7 +39,7 @@ class TestSubscribe(object):
         # pylint: disable=no-value-for-parameter
         test_is_done = threading.Event()
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             with pytest.raises(TypeError):
                 client.subscribe()
@@ -47,7 +47,7 @@ class TestSubscribe(object):
             test_is_done.set()
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_too_few_arguments',
-                                callback=started)
+                                on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -58,7 +58,7 @@ class TestSubscribe(object):
         """
         test_is_done = threading.Event()
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             callback = Mock()
             with pytest.raises(TypeError):
@@ -68,7 +68,7 @@ class TestSubscribe(object):
             test_is_done.set()
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_too_many_arguments',
-                                callback=started)
+                                on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -79,7 +79,7 @@ class TestSubscribe(object):
         """
         test_is_done = threading.Event()
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             with pytest.raises(TypeError):
                 client.subscribe('/foo1', 'share', {}, 7)
@@ -89,7 +89,7 @@ class TestSubscribe(object):
             test_is_done.set()
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_callback_must_be_a_function',
-                                callback=started)
+                                on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -100,7 +100,7 @@ class TestSubscribe(object):
         """
         test_is_done = threading.Event()
 
-        def started(err, service):
+        def started(err):
             """started listener"""
 
             def subscribed(err, topic_pattern, share):
@@ -111,10 +111,10 @@ class TestSubscribe(object):
                 client.stop()
                 test_is_done.set()
 
-            client.subscribe('/foo', callback=subscribed)
+            client.subscribe('/foo', on_subscribed=subscribed)
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_ok_callback',
-                                callback=started)
+                                on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -125,7 +125,7 @@ class TestSubscribe(object):
         """
         test_is_done = threading.Event()
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             def subscribed(err, topic_pattern, share):
                 """subscribe callback"""
@@ -134,10 +134,10 @@ class TestSubscribe(object):
                 assert share == 'share'
                 client.stop()
                 test_is_done.set()
-            client.subscribe('/bad', 'share', callback=subscribed)
+            client.subscribe('/bad', 'share', on_subscribed=subscribed)
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_fail_callback',
-                                callback=started)
+                                on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -162,14 +162,14 @@ class TestSubscribe(object):
         """
         test_is_done = threading.Event()
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             assert client.subscribe('/foo') == client
             client.stop()
             test_is_done.set()
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_returns_client',
-                                callback=started)
+                                on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -194,7 +194,7 @@ class TestSubscribe(object):
             {'valid': True, 'pattern': '/+'}
         ]
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             try:
                 for test in data:
@@ -210,7 +210,7 @@ class TestSubscribe(object):
                 test_is_done.set()
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_topics',
-                                callback=started)
+                                on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -228,7 +228,7 @@ class TestSubscribe(object):
             {'valid': False, 'share': ':a'}
         ]
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             try:
                 for test in data:
@@ -244,7 +244,7 @@ class TestSubscribe(object):
                 test_is_done.set()
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_share_names',
-                                callback=started)
+                                on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -267,7 +267,7 @@ class TestSubscribe(object):
             {'valid': True, 'options': {'a': 1}}
         ]
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             try:
                 for i in range(len(data)):
@@ -286,7 +286,7 @@ class TestSubscribe(object):
                 test_is_done.set()
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_options',
-                                callback=started)
+                                on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -309,7 +309,7 @@ class TestSubscribe(object):
             {'valid': True, 'qos': mqlight.QOS_AT_LEAST_ONCE}
         ]
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             try:
                 for i in range(len(data)):
@@ -327,7 +327,7 @@ class TestSubscribe(object):
                 test_is_done.set()
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_qos',
-                                callback=started)
+                                on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -357,7 +357,7 @@ class TestSubscribe(object):
             {'valid': True, 'opts': {'auto_confirm': tmp}}
         ]
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             try:
                 for i in range(len(data)):
@@ -374,7 +374,7 @@ class TestSubscribe(object):
                 test_is_done.set()
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_auto_confirm',
-                                callback=started)
+                                on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
 
@@ -400,7 +400,7 @@ class TestSubscribe(object):
             {'valid': True, 'ttl': 9007199254740992}
         ]
 
-        def started(err, service):
+        def started(err):
             """started listener"""
             try:
                 for i in range(len(data)):
@@ -418,6 +418,6 @@ class TestSubscribe(object):
                 test_is_done.set()
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_ttl_validity',
-                                callback=started)
+                                on_started=started)
         done = test_is_done.wait(self.TEST_TIMEOUT)
         assert done
