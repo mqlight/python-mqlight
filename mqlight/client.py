@@ -405,6 +405,13 @@ def _generate_service_list(service, security_options):
             LOG.error('_generate_service_list', NO_CLIENT_ID, error)
             raise error
 
+        # Temporary disable amqps
+        if protocol == 'amqps':
+            error = NotImplementedError(
+                'SSL is currently not implemented')
+            LOG.error('_genere_service_list', NO_CLIENT_ID, error)
+            raise error
+
         # Check we have a hostname
         host = service_url.hostname
         if host is None or host == '':
