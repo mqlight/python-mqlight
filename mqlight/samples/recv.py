@@ -135,8 +135,12 @@ def subscribe(err):
         options['ttl'] = args.destination_ttl
     if args.delay is not None and args.delay > 0:
         options['credit'] = 1
-    client.add_listener(mqlight.MESSAGE, message)
-    client.subscribe(topic_pattern, share, options, subscribed)
+    client.subscribe(
+        topic_pattern=topic_pattern,
+        share=share,
+        options=options,
+        on_subscribed=subscribed,
+        on_message=message)
 
 
 def subscribed(err, pattern, share):
@@ -153,27 +157,37 @@ def subscribed(err, pattern, share):
             print('Subscribed to pattern: {0}'.format(pattern))
 
 
-def message(data, delivery):
+def message(type, data, delivery):
     """
     Message callback
     """
-    global COUNT
-    COUNT += 1
-    if verbose:
-        print('# received message {0}'.format(COUNT))
-    if args.file:
-        print('Writing message data to {0}'.format(args.file))
-        with open(args.file, 'wb') as f:
-            f.write(''.join(data))
-        delivery['message']['confirm_delivery']()
-        client.stop()
+    if type == mqlight.MALFORMED:
+        print('*** received malformed message ***', file=sys.stderr)
+        print('data: {0}'.format(data), file=sys.stderr)
+        print('delivery: {0}'.format(delivery), file=sys.stderr)
     else:
-        print(data)
+        global COUNT
+        COUNT += 1
         if verbose:
-            print(delivery)
-        if delay > 0:
-            time.sleep(delay)
-        delivery['message']['confirm_delivery']()
+            print('# received message {0}'.format(COUNT))
+        if args.file:
+            print('Writing message data to {0}'.format(args.file))
+            with open(args.file, 'wb') as f:
+                f.write(''.join(data))
+            delivery['message']['confirm_delivery']()
+            client.stop()
+        else:
+            print(data)
+            if verbose:
+                print(delivery)
+            if delay > 0:
+                time.sleep(delay)
+            delivery['message']['confirm_delivery']()
+
+
+def state_changed(state, msg=None):
+    if state == mqlight.ERROR:
+        error(msg)
 
 
 def error(err):
@@ -188,20 +202,13 @@ def error(err):
     print('Exiting.')
     exit(1)
 
-
-def malformed(data, delivery):
-    """
-    Malformed callback
-    """
-    print('*** received malformed message ***', file=sys.stderr)
-    print('data: {0}'.format(data), file=sys.stderr)
-    print('delivery: {0}'.format(delivery), file=sys.stderr)
-
 client = None
 try:
-    client = mqlight.Client(service, client_id, security_options)
-    client.add_listener(mqlight.STARTED, subscribe)
-    client.add_listener(mqlight.ERROR, error)
-    client.add_listener(mqlight.MALFORMED, malformed)
+    client = mqlight.Client(
+        service=service,
+        client_id=client_id,
+        security_options=security_options,
+        on_started=subscribe,
+        on_state_changed=state_changed)
 except Exception as exc:
     error(exc)

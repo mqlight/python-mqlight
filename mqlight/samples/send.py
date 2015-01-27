@@ -160,6 +160,13 @@ def started(err):
     send_message()
 
 
+def state_changed(state, msg=None):
+    if state == mqlight.ERROR:
+        error(msg)
+    elif state == mqlight.DRAIN:
+        send_next_message()
+
+
 def send_message():
     """
     Sends a message
@@ -186,10 +193,12 @@ def send_message():
             global SEQUENCE
             SEQUENCE += 1
             body = '{0}: {1}'.format(SEQUENCE, body)
-        if client.send(topic=topic, data=body, options=options, callback=sent):
+        if client.send(
+                topic=topic,
+                data=body,
+                options=options,
+                on_sent=sent):
             send_next_message()
-        else:
-            client.add_once_listener(mqlight.DRAIN, send_next_message)
     else:
         # No more messages to send, so disconnect
         client.stop()
@@ -220,8 +229,11 @@ def error(err):
 
 client = None
 try:
-    client = mqlight.Client(service, client_id, security_options)
-    client.add_listener(mqlight.STARTED, started)
-    client.add_listener(mqlight.ERROR, error)
+    client = mqlight.Client(
+        service=service,
+        client_id=client_id,
+        security_options=security_options,
+        on_started=started,
+        on_state_changed=state_changed)
 except Exception as exc:
     error(exc)

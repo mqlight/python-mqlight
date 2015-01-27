@@ -17,9 +17,9 @@ IBM Corp.
 """
 import cproton
 import ast
-import mqlightexceptions as mqlexc
+from . import mqlightexceptions as mqlexc
 import os
-from mqlightlog import get_logger, NO_CLIENT_ID
+from .mqlightlog import get_logger, NO_CLIENT_ID
 from urlparse import urlunparse
 
 LOG = get_logger(__name__)
@@ -685,7 +685,7 @@ class _MQLightMessenger(object):
                 self.messenger,
                 tracker)
             if link:
-                if (cproton.pn_link_state(link) & cproton.PN_LOCAL_CLOSED):
+                if cproton.pn_link_state(link) & cproton.PN_LOCAL_CLOSED:
                     LOG.data(
                         NO_CLIENT_ID,
                         'Link closed so ignoring received message for ' +
@@ -870,7 +870,7 @@ class _MQLightMessenger(object):
         if not link:
             # throw Error if unable to find a matching Link
             raise mqlexc.MQLightError("unable to locate link for " + address)
-        while not (cproton.pn_link_state(link) & cproton.PN_REMOTE_ACTIVE):
+        while not cproton.pn_link_state(link) & cproton.PN_REMOTE_ACTIVE:
             cproton.pn_messenger_work(self.messenger, 50)
             error = cproton.pn_messenger_errno(self.messenger)
             if error:
@@ -926,7 +926,7 @@ class _MQLightMessenger(object):
         LOG.data(NO_CLIENT_ID, 'closed:', closed)
 
         if closed:
-            while not (cproton.pn_link_state(link) & cproton.PN_REMOTE_CLOSED):
+            while not cproton.pn_link_state(link) & cproton.PN_REMOTE_CLOSED:
                 cproton.pn_messenger_work(self.messenger, 50)
                 error = cproton.pn_messenger_errno(self.messenger)
                 LOG.data(NO_CLIENT_ID, 'error:', error)

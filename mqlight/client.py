@@ -79,16 +79,6 @@ QOS = (
     QOS_AT_LEAST_ONCE
 )
 
-EVENTS = (
-    STARTED,
-    STOPPED,
-    RESTARTED,
-    ERROR,
-    MESSAGE,
-    MALFORMED,
-    DRAIN
-)
-
 
 class ActiveClients(object):
 
@@ -129,43 +119,6 @@ class ActiveClients(object):
         return found
 
 ACTIVE_CLIENTS = ActiveClients()
-
-
-def create_client(options, callback=None):
-    """
-    Static Client factory
-    """
-    LOG.entry('create_client', NO_CLIENT_ID)
-    LOG.parms(NO_CLIENT_ID, 'options:', options)
-    err = None
-    if not isinstance(options, dict):
-        err = TypeError('options argument must be a dict')
-        LOG.error('create_client', NO_CLIENT_ID, err)
-        raise err
-    if callback and not hasattr(callback, '__call__'):
-        err = TypeError('callback argument must be a function')
-        LOG.error('create_client', NO_CLIENT_ID, err)
-        raise err
-    if 'service' not in options:
-        err = TypeError('service is required')
-        LOG.error('create_client', NO_CLIENT_ID, err)
-        raise err
-    if 'id' in options:
-        client_id = options['id']
-    else:
-        client_id = None
-    if 'security_options' in options:
-        security_options = options['security_options']
-    else:
-        security_options = None
-
-    client = Client(
-        options['service'],
-        client_id,
-        security_options,
-        callback)
-    LOG.exit('create_client', NO_CLIENT_ID, client)
-    return client
 
 
 class SecurityOptions(object):
@@ -511,46 +464,48 @@ class Client(object):
             service,
             client_id=None,
             security_options=None,
-            callback=None):
-        """
-        Constructs a new Client object in the started state
+            on_started=None,
+            on_state_changed=None):
+        """Constructs and starts a new :class:`Client <Client>`.
 
-        Args:
-            service: Required: when an instance of String this is a URL to
-                connect to. When an instance of Array this is an array of URLs
-                to connect to - each will be tried in turn until either a
-                connection is successfully established to one of the URLs, or
-                all of the URLs have been tried. When an instance of function
-                is specified for this argument, then function is invoked each
-                time the client wants to establish a connection (e.g. for any
-                of the state transitions, on the state diagram shown earlier on
-                this page, which lead to the 'connected' state) and is supplied
-                a single parameter containing a callback in the form
-                function(err, service). The function must supply the service
-                URL as either an instance of string or array to the callback
-                function and this will be treated in the same manner described
-                previously.
-            id: Optional; an identifier that is used to identify this client.
-                Two different instances of Client can have the same id, however
-                only one instance can be connected to the MQ Light service at a
-                given moment in time. If two instances of Client have the same
-                id and both try to connect then the first instance to establish
-                its connection is disconnected in favour of the second
-                instance. If this property is not specified then the client
-                will generate a probabilistically unique ID.
-            security_options: Optional; Any required security options for
-                user name/password authentication and SSL.
-        Returns:
-            An instance of Client
-        Raises:
-            TypeError, mqlexc.InvalidArgumentError: if any of the passed
-                arguments is invalid
+        :param service: when an instance of string, this is a URL to
+            connect to. When an instance of list, this is a list of URLs
+            to connect to - each will be tried in turn until either a
+            connection is successfully established to one of the URLs, or
+            all of the URLs have been tried. When an instance of function
+            is specified for this argument, then function is invoked each
+            time the client wants to establish a connection (e.g. for any
+            of the state transitions, on the state diagram shown earlier on
+            this page, which lead to the 'started' state) and is supplied
+            a single parameter containing a callback in the form
+            function(err, service). The function must supply the service
+            URL as either an instance of string or array to the callback
+            function and this will be treated in the same manner described
+            previously.
+        :param client_id: (optional) an identifier that is used to identify
+            this client. Two different instances of Client can have the same
+            id, however only one instance can be connected to the MQ Light
+            service at a given moment in time. If two instances of Client
+            have the same id and both try to connect then the first
+            instance to establish its connection is disconnected in favour
+            of the second instance. If this property is not specified then
+            the client will generate a probabilistically unique ID.
+        :param security_options: (optional) Any required security options for
+            user name/password authentication and SSL.
+        :param on_started: (optional) a function to be called when the client
+            reaches the started state
+        :param on_state_changed: (optional) a function to be called when the
+            client changes state
+        :return: An instance of :class:`Client <Client>`
+        :raises TypeError: if any of the arguments is of an incorrect type
+        :raises mqlexc.InvalidArgumentError: if any of the arguments is invalid
         """
         LOG.entry('Client.constructor', NO_CLIENT_ID)
         LOG.parms(NO_CLIENT_ID, 'service:', service)
         LOG.parms(NO_CLIENT_ID, 'client_id:', client_id)
         LOG.parms(NO_CLIENT_ID, 'security_options:', security_options)
-        LOG.parms(NO_CLIENT_ID, 'callback:', callback)
+        LOG.parms(NO_CLIENT_ID, 'on_started:', on_started)
+        LOG.parms(NO_CLIENT_ID, 'on_state_changed:', on_state_changed)
 
         # Ensure the service is a list or function
         service_function = None
@@ -643,8 +598,13 @@ class Client(object):
         else:
             s_o = SecurityOptions({})
 
-        if callback and not hasattr(callback, '__call__'):
-            error = TypeError('callback must be a function')
+        if on_started and not hasattr(on_started, '__call__'):
+            error = TypeError('on_started must be a function')
+            LOG.error('Client.constructor', NO_CLIENT_ID, error)
+            raise error
+
+        if on_state_changed and not hasattr(on_state_changed, '__call__'):
+            error = TypeError('on_state_changed must be a function')
             LOG.error('Client.constructor', NO_CLIENT_ID, error)
             raise error
 
@@ -686,11 +646,13 @@ class Client(object):
         # Heartbeat
         self._heartbeat_timeout = None
 
-        self._callbacks = {}
-        self._once_callbacks = {}
+        # callbacks
+        self._on_started = on_started
+        self._on_stopped = None
+        self._on_state_changed = on_state_changed
 
         # No drain event initially required
-        self._drain_event_required = False
+        self._on_drain_required = False
 
         # Number of attempts the client has tried to reconnect
         self._retry_count = 0
@@ -714,29 +676,30 @@ class Client(object):
                     self._id,
                     'stopped previously active client with same client id')
                 err = mqlexc.LocalReplacedError()
-                LOG.emit('Client.constructor', self._id, ERROR, err)
-                previous_active_client._emit(ERROR, err)
+                LOG.error('Client.constructor', self._id, err)
+                if previous_active_client._on_state_changed:
+                    previous_active_client._on_state_changed(ERROR, err)
 
                 def connect_callback(err):
-                    if callback:
-                        callback(err, self)
+                    if on_started:
+                        on_started(err)
                 self._perform_connect(connect_callback, service, True)
             previous_active_client.stop(stop_callback)
         else:
             ACTIVE_CLIENTS.add(self)
 
             def connect_callback(err):
-                if callback:
-                    callback(err, self)
+                if on_started:
+                    on_started(err)
             self._perform_connect(connect_callback, service, True)
         LOG.exit('Client.constructor', self._id, None)
 
-    def _perform_connect(self, callback, service, new_client):
+    def _perform_connect(self, on_started, service, new_client):
         """
         Performs the connection
         """
         LOG.entry('Client._perform_connect', self._id)
-        LOG.parms(NO_CLIENT_ID, 'callback:', callback)
+        LOG.parms(NO_CLIENT_ID, 'on_started:', on_started)
         LOG.parms(NO_CLIENT_ID, 'service:', service)
         LOG.parms(NO_CLIENT_ID, 'new_client:', new_client)
 
@@ -754,11 +717,11 @@ class Client(object):
             LOG.data(
                 self._id,
                 'Not connecting because client has been replaced')
-            if callback:
+            if on_started:
                 err = mqlexc.LocalReplacedError()
-                LOG.entry('Client._perform_connect.callback', self._id)
-                callback(err)
-                LOG.exit('Client.perform_connect.callback', self._id, None)
+                LOG.entry('Client._perform_connect.on_started', self._id)
+                on_started(err)
+                LOG.exit('Client.perform_connect.on_started', self._id, None)
             LOG.exit('Client._perform_connect', self._id, None)
             return
 
@@ -769,31 +732,34 @@ class Client(object):
             # client object
             if current_state not in (STOPPED, RETRYING):
                 if current_state == STOPPING:
-                    def _still_disconnecting(client, callback):
+                    def _still_disconnecting(client, on_started):
                         """
                         Waits while the client is disconnecting
                         """
                         LOG.entry(
                             'Client._still_disconnecting',
                             client.get_id())
-                        LOG.parms(NO_CLIENT_ID, 'callback:', callback)
+                        LOG.parms(NO_CLIENT_ID, 'on_started:', on_started)
                         if client.state == STOPPING:
-                            _still_disconnecting(client, callback)
+                            _still_disconnecting(client, on_started)
                         else:
-                            client._perform_connect(client, service, callback)
+                            client._perform_connect(
+                                client,
+                                service,
+                                on_started)
                         LOG.exit(
                             'Client._still_disconnecting',
                             client.get_id(),
                             None)
-                    _still_disconnecting(self, callback)
+                    _still_disconnecting(self, on_started)
                 else:
-                    if callback:
+                    if on_started:
                         LOG.entry(
-                            'Client._perform_connect.callback',
+                            'Client._perform_connect.on_started',
                             self._id)
-                        callback(None)
+                        on_started(None)
                         LOG.exit(
-                            'Client._perform_connect.callback',
+                            'Client._perform_connect.on_started',
                             self._id,
                             None)
                 LOG.exit('Client._perform_connect', self._id, self)
@@ -821,16 +787,16 @@ class Client(object):
                     self._id)
                 if err:
                     ACTIVE_CLIENTS.remove(self._id)
-                    callback(None)
+                    on_started(None)
                 else:
                     try:
                         self._service_list = _generate_service_list(
                             service,
                             self._security_options)
-                        self._connect_to_service(callback)
+                        self._connect_to_service(on_started)
                     except Exception as exc:
                         ACTIVE_CLIENTS.remove(self._id)
-                        callback(exc)
+                        on_started(exc)
                 LOG.exit(
                     'Client._perform_connect._callback',
                     self._id,
@@ -841,98 +807,47 @@ class Client(object):
                 self._service_list = _generate_service_list(
                     service,
                     self._security_options)
-                self._connect_to_service(callback)
+                self._connect_to_service(on_started)
             except Exception as exc:
                 ACTIVE_CLIENTS.remove(self._id)
                 LOG.error('Client._perform_connect', self._id, exc)
-                if callback:
-                    callback(exc)
+                if on_started:
+                    on_started(exc)
         LOG.exit('Client._perform_connect', self._id, None)
 
-    def __enter__(self):
-        LOG.entry('Client.__enter__', self._id)
-        self.start()
-        while self.state != STARTED:
-            # Wait for the connection to be established
-            pass
-        LOG.exit('Client.__enter__', self._id, self)
-        return self
+    def start(self, on_started=None):
+        """Connects to the MQ Light service.
 
-    def __exit__(self, exc_type, exc_value, trace):
-        LOG.entry('Client.__exit__', self._id)
-        self.stop()
-        LOG.exit('Client.__exit__', self._id, None)
-
-    def __iadd__(self, args):
-        LOG.entry('Client.__iadd__', self._id)
-        if isinstance(args, tuple) and len(args) == 2:
-            LOG.parms(self._id, 'event:', args[0])
-            LOG.parms(self._id, 'callback:', args[1])
-            self.add_listener(args[0], args[1])
-        else:
-            raise TypeError('args must be a tuple (event, callback)')
-        LOG.exit('Client.__iadd__', self._id, self)
-        return self
-
-    def __isub__(self, args):
-        LOG.entry('Client.__isub__', self._id)
-        if isinstance(args, tuple) and len(args) == 2:
-            LOG.parms(self._id, 'event:', args[0])
-            LOG.parms(self._id, 'callback:', args[1])
-            self.del_listener(args[0], args[1])
-        else:
-            raise TypeError('args must be a tuple (event, callback)')
-        LOG.exit('Client.__isub__', self._id, self)
-        return self
-
-    def callback(self, event):
-        def func_wrapper(func):
-            self.add_listener(event, func)
-        return func_wrapper
-
-    def start(self, callback=None):
-        """
-        Connects to the MQ Light service.
-
-        This method is asynchronous and calls the optional callback function
+        This method is asynchronous and calls the optional on_started function
         when:
         a) the client has successfully connected to the MQ Light service, or
-        b) the client.disconnect() method has been invoked before a successful
+        b) the client.stop() method has been invoked before a successful
         connection could be established, or
-        c) the client could not connect to the MQ Light service. The callback
+        c) the client could not connect to the MQ Light service. The on_started
         function should accept a single argument which will be set to None
-        if the client connects successfully or an Error object if the client
-        cannot connect to the MQ Light service or is disconnected before a
+        if the client starts successfully or an Error object if the client
+        cannot connect to the MQ Light service or is stopped before a
         connection can be established.
 
-        Calling this method will result in either the 'connected' event being
-        emitted or an 'error' event being emitted (if a connection cannot be
-        established). These events are guaranteed to be dispatched on a
-        subsequent pass through the event loop - so, to avoid missing an event,
-        the corresponding listeners must be registered either prior to calling
-        client.connect() or on the same tick as calling client.connect().
-
-        If this method is invoked while the client is in 'connecting',
-        'connected' or 'retrying' states then the method will complete without
+        If this method is invoked while the client is in 'starting',
+        'started' or 'retrying' states then the method will complete without
         performing any work or changing the state of the client. If this method
-        is invoked while the client is in 'disconnecting' state then it's
+        is invoked while the client is in 'stopping' state then it's
         effect will be deferred until the client has transitioned into
-        'disconnected' state.
+        'stopped' state.
 
-        Args:
-            callback: function to call when the connection is established
-        Returns:
-            The Client instance
-        Raises:
-            TypeError: if callback is not a function
+        :param on_started: (optional) function to call when the client reaches
+            the started state
+        :returns: The Client instance
+        :raises TypeError: if on_started is not a function
         """
         LOG.entry('Client.start', self._id)
-        LOG.parms(NO_CLIENT_ID, 'callback:', callback)
 
-        if callback and not hasattr(callback, '__call__'):
-            error = TypeError('callback must be a function')
+        if on_started and not hasattr(on_started, '__call__'):
+            error = TypeError('on_started must be a function')
             LOG.error('Client.start', self._id, error)
             raise error
+        LOG.parms(NO_CLIENT_ID, 'on_started:', on_started)
 
         # Check that the id for this instance is not already in use. If it is
         # then we need to stop the active instance before starting
@@ -950,17 +865,19 @@ class Client(object):
                     self._id,
                     'stopped previously active client with same client id')
                 err = mqlexc.LocalReplacedError()
-                LOG.emit(
+                if self._on_state_changed:
+                    self._on_state_changed(ERROR, err)
+                LOG.error(
                     'Client.start.stop_callback',
                     previous_client.get_id(),
-                    ERROR,
                     err)
-                previous_client._emit(ERROR, err)
-                self._perform_connect(callback, self._service_param, False)
+                if previous_client._on_state_changed:
+                    previous_client._on_state_changed(ERROR, err)
+                self._perform_connect(on_started, self._service_param, False)
             previous_client.stop(stop_callback)
         else:
             ACTIVE_CLIENTS.add(self)
-            self._perform_connect(callback, self._service_param, False)
+            self._perform_connect(on_started, self._service_param, False)
 
         LOG.exit('Client.start', self._id, self)
         return self
@@ -1049,7 +966,7 @@ class Client(object):
         """
         LOG.entry_often('Client._check_for_messages', self._id)
         if self.get_state() != STARTED or len(
-                self._subscriptions) == 0 or MESSAGE not in self._callbacks:
+                self._subscriptions) == 0:
             LOG.exit_often('Client._check_for_messages', self._id, None)
             return
         try:
@@ -1073,8 +990,9 @@ class Client(object):
             LOG.error('Client._check_for_messages', self._id, exc)
 
             def next_tick():
-                LOG.emit('Client._check_for_messages', self._id, ERROR, exc)
-                self._emit(ERROR, exc)
+                LOG.error('Client._check_for_messages', self._id, exc)
+                if self._on_state_changed:
+                    self._on_state_changed(ERROR, exc)
                 if _should_reconnect(exc):
                     self._reconnect()
             timer = threading.Timer(1, next_tick)
@@ -1284,20 +1202,15 @@ class Client(object):
                         malformed['MQMD']['Format'] = annots[i].value
 
         if malformed['condition']:
-            if MALFORMED in self._callbacks:
-                delivery['malformed'] = malformed
-                self._emit(MALFORMED, msg.body, delivery)
-            else:
-                msg = None
-                raise mqlexc.MQLightError('no listener for malformed event')
+            delivery['malformed'] = malformed
+            subscription['on_message'](MALFORMED, msg.body, delivery)
         else:
-            LOG.emit(
-                'Client._process_message',
+            LOG.data(
                 self._id,
                 MESSAGE,
                 data,
                 delivery)
-            self._emit(MESSAGE, data, delivery)
+            subscription['on_message'](MESSAGE, data, delivery)
 
         if self.is_stopped():
             LOG.debug(
@@ -1335,30 +1248,27 @@ class Client(object):
                     msg = None
         LOG.exit_often('Client._process_message', self._id, None)
 
-    def stop(self, callback=None):
-        """
-        Disconnects the client from the MQ Light service, implicitly closing
-        any subscriptions that the client has open. The 'disconnected' event
-        will be emitted once the client has disconnected.
+    def stop(self, on_stopped=None):
+        """Disconnects the client from the MQ Light service, implicitly closing
+        any subscriptions that the client has open.
 
-        This method works asynchronously, and will invoke the optional callback
-        once the client has disconnected. The callback function should accept a
-        single Error argument, although there is currently no situation where
-        this will be set to any other value than undefined.
+        This method works asynchronously, and will invoke the optional
+        on_stopped function once the client has disconnected.
 
-        Calling client.disconnect() when the client is in 'disconnecting' or
-        'disconnected' state has no effect. Calling client.disconnect() from
+        Calling client.stop() when the client is in 'stopping' or
+        'stopped' state has no effect. Calling client.stop() from
         any other state results in the client disconnecting and the
-        'disconnected' event being generated.
+        'stopped' event being generated.
 
-        Args:
-            callback: function to call when the connection is closed
+        :param on_stopped: (optional) function to call when the connection is
+            closed
+        :raises TypeError: if on_stopped is not a function
         """
         LOG.entry('Client.stop', self._id)
-        LOG.parms(NO_CLIENT_ID, 'callback:', callback)
 
-        if callback and not hasattr(callback, '__call__'):
-            raise TypeError('callback must be a function')
+        if on_stopped and not hasattr(on_stopped, '__call__'):
+            raise TypeError('on_stopped must be a function')
+        LOG.parms(NO_CLIENT_ID, 'on_stopped:', on_stopped)
 
         # Cancel retry timer
         if self._retry_timer:
@@ -1367,28 +1277,28 @@ class Client(object):
         # just return if already stopped or in the process of
         # stopping
         if self.is_stopped():
-            if callback:
-                LOG.entry('Client.stop.callback', self._id)
-                callback(None)
-                LOG.exit('Client.stop.callback', self._id, None)
+            if on_stopped:
+                LOG.entry('Client.stop.on_stopped', self._id)
+                on_stopped(None)
+                LOG.exit('Client.stop.on_stopped', self._id, None)
             LOG.exit('Client.stop', self._id, self)
             return self
 
-        self._perform_disconnect(callback)
+        self._perform_disconnect(on_stopped)
         LOG.exit('Client.stop', self._id, self)
         return self
 
-    def _perform_disconnect(self, callback):
+    def _perform_disconnect(self, on_stopped):
         """
         Performs the disconnection
         """
         LOG.entry('Client._perform_disconnect', self._id)
-        LOG.parms(NO_CLIENT_ID, 'callback:', callback)
+        LOG.parms(NO_CLIENT_ID, 'on_stopped:', on_stopped)
         self._set_state(STOPPING)
 
         # Only disconnect when all outstanding send operations are complete
         if not self._outstanding_sends:
-            def stop_processing(client, callback):
+            def stop_processing(client, on_stopped):
                 LOG.entry(
                     'Client._perform_disconnect.stop_processing',
                     self._id)
@@ -1406,7 +1316,7 @@ class Client(object):
                         LOG.entry(
                             'Client._perform_disconnect.next_tick',
                             self._id)
-                        msg['callback'](
+                        msg['on_sent'](
                             mqlexc.StoppedError(
                                 'send aborted due to disconnect'),
                             None,
@@ -1431,31 +1341,34 @@ class Client(object):
                 active_client = ACTIVE_CLIENTS.get(self._id)
                 if self == active_client:
                     ACTIVE_CLIENTS.remove(self._id)
-                LOG.emit(
+                LOG.state(
                     'Client._perform_disconnect.stop_processing',
                     self._id,
                     STOPPED)
                 if not self._first_start:
                     self._first_start = True
-                    self._emit(STOPPED, None)
+                    if self._on_state_changed:
+                        self._on_state_changed(STOPPED, None)
 
-                if callback:
-                    LOG.entry('Client._perform_disconnect.callback', self._id)
-                    callback(None)
+                if on_stopped:
+                    LOG.entry(
+                        'Client._perform_disconnect.on_stopped',
+                        self._id)
+                    on_stopped(None)
                     LOG.exit(
-                        'Client._perform_disconnect.callback',
+                        'Client._perform_disconnect.on_stopped',
                         self._id,
                         None)
                 LOG.exit(
                     'Client._perform_disconnect.stop_processing',
                     self._id,
                     None)
-            self._stop_messenger(stop_processing, callback)
+            self._stop_messenger(stop_processing, on_stopped)
             LOG.exit('Client._perform_disconnect', self._id, None)
             return
 
         # Try disconnect again
-        timer = threading.Timer(1, self._perform_disconnect, [callback])
+        timer = threading.Timer(1, self._perform_disconnect, [on_stopped])
         timer.daemon = True
         timer.start()
         LOG.exit('Client._perform_disconnect', self._id, None)
@@ -1610,11 +1523,12 @@ class Client(object):
             self._connection_id += 1
 
             def next_tick():
-                LOG.emit(
+                LOG.state(
                     'Client._connect_to_service.next_tick',
                     self._id,
                     event_to_emit)
-                self._emit(event_to_emit, None)
+                if self._on_state_changed:
+                    self._on_state_changed(event_to_emit, None)
                 if callback:
                     LOG.entry('Client._connect_to_service.callback2', self._id)
                     callback(None)
@@ -1695,12 +1609,12 @@ class Client(object):
 
             if error:
                 def next_tick():
-                    LOG.emit(
+                    LOG.error(
                         'Client._connect_to_service',
                         self._id,
-                        ERROR,
                         error)
-                    self._emit(ERROR, error)
+                    if self._on_state_changed:
+                        self._on_state_changed(ERROR, error)
                 timer = threading.Timer(1, next_tick)
                 timer.start()
         LOG.exit('Client._connect_to_service', self._id, None)
@@ -1748,16 +1662,14 @@ class Client(object):
 
     def get_id(self):
         """
-        Returns:
-            The client id
+        :returns: The client id
         """
         LOG.data(self._id, self._id)
         return self._id
 
     def get_service(self):
         """
-        Returns:
-            The service if connected otherwise None
+        :returns: The service if connected otherwise None
         """
         if self.state == STARTED:
             LOG.data(self._id, 'service:', self._service)
@@ -1769,8 +1681,7 @@ class Client(object):
 
     def get_state(self):
         """
-        Returns:
-            The state of the client
+        :returns: The state of the client
         """
         LOG.data(self._id, 'state:', self._state)
         return self._state
@@ -1789,134 +1700,38 @@ class Client(object):
 
     def is_stopped(self):
         """
-        Returns:
-            True if in disconnected or disconnecting state, otherwise False
+        :returns: ``True`` if the Client is in the stopped or stopping state,
+            otherwise  ``False``
         """
         LOG.data(self._id, 'state:', self.state)
         return self.state in (STOPPED, STOPPING)
 
-    def add_listener(self, event, callback):
-        """
-        Registers a callback to be called when the event is emitted
+    """
+    def _set_on_state_changed(self, on_state_changed):
+        LOG.entry('Client._set_on_state_changed', self._id)
+        if not hasattr(on_state_changed, '__call__'):
+            error = TypeError('on_state_changed must be a function')
+            LOG.error('Client._set_on_state_changed', self._id, error)
+            raise error
+        self._on_state_changed = on_state_changed
+        LOG.exit('Client._set_on_state_changed', self._id, None)
 
-        Args:
-            event: event the callback is registered on
-            callback: function to call when the event is triggered
-        Raises:
-            TypeError: if callback is not a function
-            mqlexc.InvalidArgumentError: if event is invalid
-        """
-        LOG.entry('Client.add_listener', self._id)
-        LOG.parms(self._id, 'event:', event)
-        LOG.parms(self._id, 'callback:', callback.__name__)
+    on_state_changed = property(_set_on_state_changed)
+    """
 
-        if event in EVENTS:
-            if hasattr(callback, '__call__'):
-                if event not in self._callbacks:
-                    self._callbacks[event] = []
-                self._callbacks[event].append(callback)
-            else:
-                raise TypeError('callback must be a function')
-        else:
-            raise mqlexc.InvalidArgumentError(
-                'invalid event {0}'.format(event))
-        LOG.exit('Client.add_listener', self._id, None)
+    def send(self, topic, data, options=None, on_sent=None):
+        """Sends a message to the MQLight service.
 
-    def add_once_listener(self, event, callback):
-        """
-        Registers a callback to be called when the event is emitted
-
-        Args:
-            event: event the callback is registered on
-            callback: function to call when the event is triggered
-        Raises:
-            TypeError: if callback is not a function
-            mqlexc.InvalidArgumentError: if event is invalid
-        """
-        LOG.entry('Client.add_once_listener', self._id)
-        LOG.parms(self._id, 'event:', event)
-        LOG.parms(self._id, 'callback:', callback.__name__)
-
-        if event in EVENTS:
-            if hasattr(callback, '__call__'):
-                if event not in self._once_callbacks:
-                    self._once_callbacks[event] = []
-                self._once_callbacks[event].append(callback)
-            else:
-                raise TypeError('callback must be a function')
-        else:
-            raise mqlexc.InvalidArgumentError(
-                'invalid event {0}'.format(event))
-        LOG.exit('Client.add_once_listener', self._id, None)
-
-    def del_listener(self, event, callback):
-        """
-        Removes a callback for the specified event
-
-        Args:
-            event: event the callback is registered on
-            callback: callback function to remove
-        Raises:
-            mqlexc.InvalidArgumentError: if event is invalid
-        """
-        LOG.entry('Client.del_listener', self._id)
-        LOG.parms(self._id, 'event:', event)
-        LOG.parms(self._id, 'callback:', callback.__name__)
-        if event in EVENTS:
-            if event in self._callbacks and callback in self._callbacks[event]:
-                self._callbacks[event].remove(callback)
-        else:
-            raise mqlexc.InvalidArgumentError(
-                'invalid event {0}'.format(event))
-        LOG.exit('Client.del_listener', self._id, None)
-
-    def _emit(self, event, *args, **kwargs):
-        """
-        Calls all the callbacks registered with the events that is emitted
-
-        Raises:
-            mqlexc.InvalidArgumentError: if event is invalid
-        """
-        LOG.entry('Client._emit', self._id)
-        LOG.parms(self._id, 'event:', event)
-        LOG.parms(self._id, 'args:', args)
-        LOG.parms(self._id, 'kwargs:', kwargs)
-        callbacks = []
-        once_callbacks = []
-        if event in EVENTS:
-            if event in self._callbacks:
-                for callback in self._callbacks[event]:
-                    callbacks.append(callback)
-                for callback in callbacks:
-                    callback(*args, **kwargs)
-            if event in self._once_callbacks:
-                for callback in self._once_callbacks[event]:
-                    once_callbacks.append(callback)
-                for callback in once_callbacks:
-                    callback(*args, **kwargs)
-                    self._once_callbacks[event].remove(callback)
-        else:
-            raise mqlexc.InvalidArgumentError(
-                'invalid event {0}'.format(event))
-        LOG.exit('Client._emit', self._id, None)
-
-    def send(self, topic, data, options=None, callback=None):
-        """
-        Sends a message to the MQLight service.
-
-        Args:
-            topic: topic of the message
-            data: content of the message
-            options: message attributes
-            callback: function to call whent the message is sent
-        Returns:
-            True if this message was either sent or is the next to be sent or
-            False if the message was queued in user memory, because either
-            there was a backlog of messages, or the client was not in a
-            connected state
-        Raises:
-            TypeError: if any of the arguments is invalid
-            mqlexc.StoppedError: if the client is disconnected
+        :param topic: topic of the message
+        :param data: body of the message
+        :param options: (optional) message attributes
+        :param on_sent: (optional) function to call when the message is sent
+        :returns: ``True`` if this message was either sent or is the next to be
+            sent or ``False`` if the message was queued in user memory, because
+            either there was a backlog of messages, or the client was not in a
+            started state
+        :raises TypeError: if any of the arguments are invalid
+        :raises mqlexc.StoppedError: if the client is stopped
         """
         LOG.entry('Client.send', self._id)
         next_message = False
@@ -1966,15 +1781,14 @@ class Client(object):
                         'options[\'ttl\'] value {0} is invalid must be an '
                         'unsigned integer number'.format(options['ttl']))
 
-        if callback:
-            if not hasattr(callback, '__call__'):
-                raise TypeError('callback must be a function type')
+        if on_sent:
+            if not hasattr(on_sent, '__call__'):
+                raise TypeError('on_sent must be a function')
         elif qos == QOS_AT_LEAST_ONCE:
             raise mqlexc.InvalidArgumentError(
-                'callback must be specified when options[\'qos\'] value of 1 '
+                'on_sent must be specified when options[\'qos\'] value of 1 '
                 '(at least once) is specified')
-
-        LOG.parms(self._id, 'callback:', callback)
+        LOG.parms(self._id, 'on_sent:', on_sent)
 
         # Ensure we have attempted a connect
         if self.is_stopped():
@@ -1986,9 +1800,9 @@ class Client(object):
                 'topic': topic,
                 'data': data,
                 'options': options,
-                'callback': callback
+                'on_sent': on_sent
             })
-            self._drain_event_required = True
+            self._on_drain_required = True
             LOG.exit('Client.send', self._id, False)
             return False
 
@@ -2020,7 +1834,7 @@ class Client(object):
             self._outstanding_sends.append({
                 'msg': msg,
                 'qos': qos,
-                'callback': callback,
+                'on_sent': on_sent,
                 'topic': topic,
                 'options': options
             })
@@ -2104,22 +1918,19 @@ class Client(object):
                                     self._outstanding_sends.pop(0)
 
                                     # Generate drain event
-                                    if self._drain_event_required and len(
+                                    if self._on_drain_required and len(
                                             self._outstanding_sends) <= 1:
-                                        LOG.emit(
-                                            'Client.send.send_outbound_msg',
-                                            self._id,
-                                            DRAIN)
-                                        self._drain_event_required = False
-                                        self._emit(DRAIN)
 
-                                    # invoke the callback, if specified
-                                    if in_flight['callback']:
+                                        self._on_state_changed(DRAIN, None)
+                                        self._on_drain_required = False
+
+                                    # invoke on_sent, if specified
+                                    if in_flight['on_sent']:
                                         LOG.entry(
                                             'Client.send.send_outbound_msg.'
                                             'cb1',
                                             self._id)
-                                        in_flight['callback'](
+                                        in_flight['on_sent'](
                                             err,
                                             in_flight['topic'],
                                             in_flight['msg'].body,
@@ -2164,7 +1975,7 @@ class Client(object):
                                     'topic': in_flight['topic'],
                                     'data': in_flight['msg'].body,
                                     'options': in_flight['options'],
-                                    'callback': in_flight['callback']
+                                    'on_sent': in_flight['on_sent']
                                 })
                             else:
                                 # we don't know if an at-most-once message made
@@ -2172,12 +1983,12 @@ class Client(object):
                                 # null to indicate success otherwise the
                                 # application could decide to resend
                                 # (duplicate) the message
-                                if in_flight['callback']:
+                                if in_flight['on_sent']:
                                     LOG.entry(
                                         'Client.send.send_outbound_msg.cb2',
                                         self._id)
                                     try:
-                                        in_flight['callback'](
+                                        in_flight['on_sent'](
                                             None,
                                             in_flight['topic'],
                                             in_flight['msg'].body,
@@ -2196,12 +2007,12 @@ class Client(object):
                                         None)
 
                         if error:
-                            LOG.emit(
+                            LOG.error(
                                 'Client.send.send_outbound_msg',
                                 self._id,
-                                ERROR,
                                 error)
-                            self._emit(ERROR, error)
+                            if self._on_state_changed:
+                                self._on_state_changed(ERROR, error)
 
                         if _should_reconnect(error):
                             self._reconnect()
@@ -2228,7 +2039,7 @@ class Client(object):
             if len(self._outstanding_sends) <= 1:
                 next_message = True
             else:
-                self._drain_event_required = True
+                self._on_drain_required = True
 
         except Exception as exc:
             err = mqlexc.MQLightError(exc)
@@ -2244,7 +2055,7 @@ class Client(object):
                     'topic': topic,
                     'data': data,
                     'options': options,
-                    'callback': callback
+                    'on_sent': on_sent
                 })
 
             # Reconnect can result in many callbacks being fired in a single
@@ -2255,24 +2066,24 @@ class Client(object):
                     do_reconnect = False
                     while len(self._queued_send_callbacks) > 0:
                         invocation = self._queued_send_callbacks.pop(0)
-                        if invocation['callback']:
+                        if invocation['on_sent']:
                             if invocation['qos'] == QOS_AT_MOST_ONCE:
-                                LOG.entry('Client.send.callback', NO_CLIENT_ID)
-                                invocation['callback'](
+                                LOG.entry('Client.send.on_sent', NO_CLIENT_ID)
+                                invocation['on_sent'](
                                     invocation['error'],
                                     invocation['topic'],
                                     invocation['body'],
                                     invocation['options'])
                                 LOG.exit(
-                                    'Client.send.callback',
+                                    'Client.send.on_sent',
                                     NO_CLIENT_ID,
                                     None)
-                        LOG.emit(
+                        LOG.error(
                             'Client.send',
                             self._id,
-                            ERROR,
                             invocation['error'])
-                        self._emit(ERROR, invocation['error'])
+                        if self._on_state_changed:
+                            self._on_state_changed(ERROR, invocation['error'])
                         do_reconnect |= _should_reconnect(invocation['error'])
                     if do_reconnect:
                         self._reconnect()
@@ -2282,7 +2093,7 @@ class Client(object):
 
             self._queued_send_callbacks.append({
                 'body': msg.body,
-                'callback': callback,
+                'on_sent': on_sent,
                 'error': err,
                 'options': options,
                 'qos': qos,
@@ -2297,20 +2108,21 @@ class Client(object):
             topic_pattern,
             share=None,
             options=None,
-            callback=None):
-        """
-        Constructs a subscription object and starts the emission of message
+            on_subscribed=None,
+            on_message=None):
+        """Constructs a subscription object and starts the emission of message
         events each time a message arrives, at the MQ Light service, that
         matches topic pattern.
 
-        Args:
-            topic_pattern: topic to subscribe to
-            share: share name of the subscription
-            options:
-            callback: function to call when the subscription is done
-        Raises:
-            TypeError, mqlexc.InvalidArgumentError: if any argument is invalid
-            mqlexc.StoppedError: if the client is disconnected
+        :param topic_pattern: topic to subscribe to
+        :param share: share name of the subscription
+        :param options:
+        :param on_subscribed: function to call when the subscription is done
+        :param on_message: function to call when a message is received
+        :return: the client instance
+        :raises TypeError:
+        :raises mqlexc.InvalidArgumentError: if any argument is invalid
+        :raise mqlexc.StoppedError: if the client is stopped
         """
         LOG.entry('Client.subscribe', self._id)
         if topic_pattern is None or topic_pattern == '':
@@ -2377,10 +2189,13 @@ class Client(object):
                         'options[\'credit\'] value {0} is invalid must be an '
                         'unsigned integer number'.format(options['credit']))
 
-        if callback and not hasattr(callback, '__call__'):
-            raise TypeError('callback must be a function')
+        if on_subscribed and not hasattr(on_subscribed, '__call__'):
+            raise TypeError('on_subscribed must be a function')
+        LOG.parms(self._id, 'on_subscribed:', on_subscribed)
 
-        LOG.parms(self._id, 'callback:', callback)
+        if on_message and not hasattr(on_message, '__call__'):
+            raise TypeError('on_message must be a function')
+        LOG.parms(self._id, 'on_message:', on_message)
 
         # Ensure we have attempted a connect
         if self.is_stopped():
@@ -2409,7 +2224,8 @@ class Client(object):
                 'topic_pattern': topic_pattern,
                 'share': original_share_value,
                 'options': options,
-                'callback': callback
+                'on_subscribed': on_subscribed,
+                'on_message': on_message
             })
             LOG.exit('Client.subscribe', self._id, self)
             return self
@@ -2431,16 +2247,17 @@ class Client(object):
                 LOG.error('Client.subscribe', self._id, exc)
                 err = mqlexc.MQLightError(exc)
 
-        if callback:
+        if on_subscribed:
             def next_tick():
-                callback(err, topic_pattern, original_share_value)
+                on_subscribed(err, topic_pattern, original_share_value)
             timer1 = threading.Timer(1, next_tick)
             timer1.daemon = True
             timer1.start()
 
         if err:
-            LOG.emit('Client.subscribe', self._id, ERROR, err)
-            self._emit(ERROR, err)
+            LOG.error('Client.subscribe', self._id, err)
+            if self._on_state_changed:
+                self._on_state_changed(ERROR, err)
 
             if _should_reconnect(err):
                 LOG.data(self._id, 'queued subscription and calling reconnect')
@@ -2452,7 +2269,8 @@ class Client(object):
                     'topic_pattern': topic_pattern,
                     'share': original_share_value,
                     'options': options,
-                    'callback': callback
+                    'on_subscribed': on_subscribed,
+                    'on_message': on_message
                 })
                 self._reconnect()
         else:
@@ -2467,7 +2285,8 @@ class Client(object):
                 'topic_pattern': topic_pattern,
                 'share': original_share_value,
                 'options': options,
-                'callback': callback,
+                'on_subscribed': on_subscribed,
+                'on_message': on_message,
                 'credit': credit,
                 'unconfirmed': 0,
                 'confirmed': 0
@@ -2487,42 +2306,28 @@ class Client(object):
             topic_pattern,
             share=None,
             options=None,
-            callback=None):
-        """
-        Stops the flow of messages from a destination to this client. The
-        client's message callback will no longer be driven when messages
+            on_unsubscribed=None):
+        """Stops the flow of messages from a destination to this client. The
+        client's on_message callback will no longer be driven when messages
         arrive, that match the pattern associate with the destination. The
-        pattern (and optional) <code>share</code> arguments must match
-        those specified when the destination was created by calling the
-        original client.subscribe(...) method.
+        pattern and optional share arguments must match those specified when
+        the destination was created by calling the original
+        client.subscribe(...) method.
 
-        The optional options argument can be used to specify how the
-        call to client.unsubscribe(...) behaves. If the
-        options argument has any of the following properties they will
-        be interpreted as follows:
-            ttl - Optional, coerced to a number, if specified and must be equal
-                to 0. If specified the client will reset the destination's time
-                to live to 0 as part of the unsubscribe operation. If the
-                destination is private to the client, then setting the TTL to
-                zero will ensure that the destination is deleted. If the
-                destination is shared when setting the TTL to zero, the
-                destination will be deleted when no more clients are associated
-                with the destination.
-        Args:
-            topic_pattern that was supplied in the previous call to subscribe.
-            share (Optional) that was supplied in the previous call to
-                 subscribe.
-            options (Optional) The options argument accepts an object with
-                 properties set to customise the unsubscribe behaviour.
-            callback - (Optional) Invoked if the unsubscribe request has
-                 been processed successfully.
-        Returns:
-            The instance of the client this was called on which will emit
-            'message' events on arrival.
-
-        Raises:
-            mqlexc.InvalidArgumentError: If the topic pattern parameter is
-                undefined.
+        :param topic_pattern: the topic_pattern that was supplied in the
+            previous call to subscribe.
+        :param share: (optional) the share that was supplied in the previous
+            call to subscribe.
+        :param options: (optional) The options argument accepts an object with
+            properties set to customise the unsubscribe behaviour.
+        :param on_unsubscribed: (optional) Invoked if the unsubscribe request
+            has been processed successfully.
+        :returns: The instance of the client.
+        :raises TypeError:
+        :raises mqlexc.RangeError:
+        :raises mqlexc.StoppedError:
+        :raises mqlexc.InvalidArgumentError: If the topic pattern parameter is
+            None.
         """
         LOG.entry('Client.unsubscribe', self._id)
         LOG.parms(self._id, 'topic_pattern:', topic_pattern)
@@ -2573,8 +2378,8 @@ class Client(object):
                         'supported value for  an unsubscribe request'.format(
                             options['ttl']))
 
-        if callback and not hasattr(callback, '__call__'):
-            err = TypeError('callback must be a function type')
+        if on_unsubscribed and not hasattr(on_unsubscribed, '__call__'):
+            err = TypeError('on_unsubscribed must be a function')
             LOG.error('Client.unsubscribe', self._id, err)
             raise err
 
@@ -2636,7 +2441,7 @@ class Client(object):
                 'topic_pattern': topic_pattern,
                 'share': original_share_value,
                 'options': options,
-                'callback': callback
+                'on_unsubscribed': on_unsubscribed
             })
 
         # if client is in the retrying state, then queue this unsubscribe
@@ -2655,11 +2460,14 @@ class Client(object):
         try:
             self._messenger.unsubscribe(address, ttl)
 
-            if callback:
+            if on_unsubscribed:
                 def next_tick():
-                    LOG.entry('Client.unsubscribe.callback', self._id)
-                    callback(None, topic_pattern, original_share_value)
-                    LOG.exit('Client.unsubscribe.callback', self._id, None)
+                    LOG.entry('Client.unsubscribe.on_unsubscribed', self._id)
+                    on_unsubscribed(None, topic_pattern, original_share_value)
+                    LOG.exit(
+                        'Client.unsubscribe.on_unsubscribed',
+                        self._id,
+                        None)
                 timer = threading.Timer(1, next_tick)
                 timer.daemon = True
                 timer.start()
@@ -2673,8 +2481,8 @@ class Client(object):
 
         except Exception as exc:
             LOG.error('Client.unsubscribe', self._id, exc)
-            LOG.emit('Client.unsubscribe', self._id, ERROR, exc)
-            self._emit(ERROR, exc)
+            if self._on_state_changed:
+                self._on_state_changed(ERROR, exc)
             if _should_reconnect(exc):
                 queue_unsubscribe()
                 self._reconnect()

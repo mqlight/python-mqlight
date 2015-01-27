@@ -15,8 +15,8 @@ disclosure restricted by GSA ADP Schedule Contract with
 IBM Corp.
 </copyright>
 """
-from mqlightlog import get_logger, NO_CLIENT_ID
-import mqlightexceptions as mqlexc
+from .mqlightlog import get_logger, NO_CLIENT_ID
+from . import mqlightexceptions as mqlexc
 
 LOG = get_logger(__name__)
 

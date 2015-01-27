@@ -315,8 +315,8 @@ class MQLightLog(object):
         keys = {'client_id': client_id}
         self._write(DATA, msg, keys)
 
-    def emit(self, name, client_id, event, *args):
-        msg = 'Event "{0}" emitted by {1} '.format(event, name)
+    def state(self, name, client_id, event, *args):
+        msg = 'Client state changed to "{0}" by {1} '.format(event, name)
         msg += ' '.join(['{0}'.format(arg) for arg in args])
         keys = {'client_id': client_id}
         self._write(EMIT, msg, keys)
