@@ -125,7 +125,7 @@ class MQLightLog(object):
                 sig = signal.SIGBREAK
             else:
                 sig = signal.SIGUSR2
-                
+
             signal.signal(sig, self._signal_handler)
 
         self._log_size = os.getenv('MQLIGHT_PYTHON_LOG_SIZE', DEFAULT_LOG_SIZE)
