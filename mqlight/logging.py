@@ -24,6 +24,7 @@ import socket
 import platform
 import threading
 import mqlight
+import traceback
 
 ENTRY_IND = '>-----------------------------------------------------------'
 EXIT_IND = '<-----------------------------------------------------------'
@@ -105,7 +106,6 @@ class MQLightLog(object):
     def __init__(self, name):
         self._log = logging.getLogger(name)
         self._level = LEVELS[os.getenv('MQLIGHT_PYTHON_LOG', DEFAULT_LEVEL)]
-        self._log.setLevel(self._level)
         self._ffdc_sequence = 0
         self._stack = DEFAULT_STACK
 
@@ -121,9 +121,11 @@ class MQLightLog(object):
             # when the signal is caught. Set the environment variable
             # MQLIGHT_PYTHON_NO_HANDLER to stop the signal handler being
             # registered.
-            sig = signal.SIGUSR2
             if IS_WIN:
                 sig = signal.SIGBREAK
+            else:
+                sig = signal.SIGUSR2
+                
             signal.signal(sig, self._signal_handler)
 
         self._log_size = os.getenv('MQLIGHT_PYTHON_LOG_SIZE', DEFAULT_LOG_SIZE)
@@ -142,11 +144,11 @@ class MQLightLog(object):
 
         # Start logging at the 'debug' level if we're not doing so, or turn off
         # logging if we already are
-        if self._level > DEBUG:
+        if DEFAULT_LEVEL > DEBUG:
             if self._level == DEFAULT_LEVEL:
-                self.set_level(DEBUG)
+                self._level = DEBUG
             else:
-                self.set_level(DEFAULT_LEVEL)
+                self._level = DEFAULT_LEVEL
 
     def _set_handler(self, stream, log_size, formatter):
         """
@@ -300,6 +302,11 @@ class MQLightLog(object):
         self._write(FFDC, HEADER_BANNER, keys)
         self._write(FFDC,
                     'Data:             {0}'.format(data), keys)
+        self._write(FFDC, HEADER_BANNER, keys)
+        self._write(FFDC, 'Call Stack:', keys)
+        for call in traceback.format_stack():
+            self._write(FFDC, call.strip(), keys)
+        self._write(FFDC, HEADER_BANNER, keys)
 
     def debug(self, client_id, message):
         keys = {'client_id': client_id}
