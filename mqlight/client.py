@@ -968,14 +968,15 @@ class Client(object):
 
     def _check_for_messages(self):
         """
-        Function to force the client to check for messages, outputting the
-        contents of any that have arrived to the client event emitter.
+        Function to force the client to check for messages. The on_message
+        callback set in subscribe() is called when a message is received.
         """
         LOG.entry_often('Client._check_for_messages', self._id)
         if self.get_state() != STARTED or len(
                 self._subscriptions) == 0:
             LOG.exit_often('Client._check_for_messages', self._id, None)
             return
+        requeue = True
         try:
             messages = self._messenger.receive(50)
             if messages and len(messages) > 0:
@@ -996,16 +997,19 @@ class Client(object):
         except Exception as exc:
             LOG.error('Client._check_for_messages', self._id, exc)
 
+            if not _should_reconnect(exc):
+                requeue = False
+
             def next_tick():
                 LOG.error('Client._check_for_messages', self._id, exc)
                 if self._on_state_changed:
                     self._on_state_changed(ERROR, exc)
                 if _should_reconnect(exc):
                     self._reconnect()
-            timer = threading.Timer(1, next_tick)
+            timer = threading.Timer(0.2, next_tick)
             timer.start()
 
-        if self.get_state() == STARTED:
+        if self.get_state() == STARTED and requeue:
             timer = threading.Timer(0.2, self._check_for_messages)
             timer.start()
 
