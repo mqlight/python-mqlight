@@ -157,11 +157,11 @@ def subscribed(err, pattern, share):
             print('Subscribed to pattern: {0}'.format(pattern))
 
 
-def message(type, data, delivery):
+def message(message_type, data, delivery):
     """
     Message callback
     """
-    if type == mqlight.MALFORMED:
+    if message_type == mqlight.MALFORMED:
         print('*** received malformed message ***', file=sys.stderr)
         print('data: {0}'.format(data), file=sys.stderr)
         print('delivery: {0}'.format(delivery), file=sys.stderr)
@@ -177,7 +177,10 @@ def message(type, data, delivery):
             delivery['message']['confirm_delivery']()
             client.stop()
         else:
-            print(data)
+            if isinstance(data, list):
+                print('{0} ...'.format(data[:50]))
+            else:
+                print(data)
             if verbose:
                 print(delivery)
             if delay > 0:
@@ -185,7 +188,7 @@ def message(type, data, delivery):
             delivery['message']['confirm_delivery']()
 
 
-def state_changed(state, msg=None):
+def state_changed(state, msg):
     if state == mqlight.ERROR:
         error(msg)
 

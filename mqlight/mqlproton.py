@@ -85,6 +85,7 @@ class _MQLightMessage(object):
                 # inspect data to see if we have PN_STRING data
                 cproton.pn_data_next(body)
                 data_type = cproton.pn_data_type(body)
+                LOG.data(NO_CLIENT_ID, 'data_type:', data_type)
                 if data_type == cproton.PN_STRING:
                     cproton.pn_message_set_format(self._msg, cproton.PN_TEXT)
                 else:
@@ -101,7 +102,13 @@ class _MQLightMessage(object):
                 if data_type == cproton.PN_STRING:
                     result = str(result)
                 else:
-                    result = ast.literal_eval(result)
+                    # If the data is not text we first try to parse it into a
+                    # python object
+                    try:
+                        result = ast.literal_eval(result)
+                    except Exception:
+                        # Otherwise we store it as a list
+                        result = list(result)
             else:
                 result = self._body
         LOG.exit('_MQLightMessage._get_body', NO_CLIENT_ID, result)

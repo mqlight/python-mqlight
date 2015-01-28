@@ -212,7 +212,10 @@ def sent(err, topic, data, options):
         error('Problem with send request: {0}'.format(err))
     else:
         if data:
-            print(data)
+            if isinstance(data, list):
+                print('{0} ...'.format(data[:50]))
+            else:
+                print(data)
 
 
 def error(err):
