@@ -21,10 +21,11 @@ import argparse
 import mqlight
 import time
 import uuid
+import threading
 
-COUNT = 0
 SEQUENCE = 0
 SERVICE = 'amqp://localhost'
+TIMEOUT = 3
 
 parser = argparse.ArgumentParser(
     description='Send a message to an MQ Light server.')
@@ -116,6 +117,10 @@ delay = args.delay
 messages = args.messages
 message_ttl = args.message_ttl
 sequence = args.sequence
+send_complete = threading.Event()
+
+if args.repeat is not None and repeat > 1:
+    messages = messages * repeat
 
 security_options = {}
 if args.trust_certificate is not None:
@@ -164,6 +169,7 @@ def state_changed(state, msg=None):
     if state == mqlight.ERROR:
         error(msg)
     elif state == mqlight.DRAIN:
+        send_complete.set()
         send_next_message()
 
 
@@ -171,21 +177,9 @@ def send_message():
     """
     Sends a message
     """
-    global COUNT
-    msg_num = COUNT
-    COUNT += 1
-
-    # Check if messages should be repeated again
-    if len(messages) == COUNT:
-        global repeat
-        if repeat != 1:
-            COUNT = 0
-        if repeat > 1:
-            repeat -= 1
-
-    # Keep going until all messages have been sent
-    if len(messages) > msg_num:
-        body = messages[msg_num]
+    if len(messages) > 0:
+        send_complete.clear()
+        body = messages.pop(0)
         options = {'qos': mqlight.QOS_AT_LEAST_ONCE}
         if message_ttl is not None:
             options['ttl'] = message_ttl * 1000
@@ -198,7 +192,12 @@ def send_message():
                 data=body,
                 options=options,
                 on_sent=sent):
+            # Send the next message now
             send_next_message()
+        else:
+            # There's a backlog of messages to send, so wait until the backlog
+            # is cleared before sending any more
+            send_complete.wait(TIMEOUT)
     else:
         # No more messages to send, so disconnect
         client.stop()

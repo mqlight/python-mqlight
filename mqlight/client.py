@@ -1931,9 +1931,12 @@ class Client(object):
                                     # Generate drain event
                                     if self._on_drain_required and len(
                                             self._outstanding_sends) <= 1:
-
-                                        self._on_state_changed(DRAIN, None)
+                                        LOG.state(
+                                            'Client.send.send_outbound_msg',
+                                            self._id,
+                                            DRAIN)
                                         self._on_drain_required = False
+                                        self._on_state_changed(DRAIN, None)
 
                                     # invoke on_sent, if specified
                                     if in_flight['on_sent']:

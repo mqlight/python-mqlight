@@ -35,7 +35,7 @@ ALL = 100
 EXIT_OFTEN = 200
 ENTRY_OFTEN = 300
 DEBUG = 500
-EMIT = 800
+STATE = 800
 DATA = 1000
 PARMS = 1200
 EXIT = 1501
@@ -49,7 +49,7 @@ LEVELS = {
     EXIT_OFTEN: 'EXIT_OFTEN',
     ENTRY_OFTEN: 'ENTRY_OFTEN',
     DEBUG: 'DEBUG',
-    EMIT: 'EMIT',
+    STATE: 'STATE',
     DATA: 'DATA',
     PARMS: 'PARMS',
     EXIT: 'EXIT',
@@ -61,7 +61,7 @@ LEVELS = {
     'EXIT_OFTEN': EXIT_OFTEN,
     'ENTRY_OFTEN': ENTRY_OFTEN,
     'DEBUG': DEBUG,
-    'EMIT': EMIT,
+    'STATE': STATE,
     'DATA': DATA,
     'PARMS': PARMS,
     'EXIT': EXIT,
@@ -326,7 +326,7 @@ class MQLightLog(object):
         msg = 'Client state changed to "{0}" by {1} '.format(event, name)
         msg += ' '.join(['{0}'.format(arg) for arg in args])
         keys = {'client_id': client_id}
-        self._write(EMIT, msg, keys)
+        self._write(STATE, msg, keys)
 
     def error(self, name, client_id, err):
         msg = 'Error {0} raised by {1}: {2} '.format(
