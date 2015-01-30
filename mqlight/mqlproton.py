@@ -668,8 +668,8 @@ class _MQLightMessenger(object):
         messages = []
         count = cproton.pn_messenger_incoming(self.messenger)
         LOG.data(NO_CLIENT_ID, 'messages count: {0}'.format(count))
-        message = cproton.pn_message()
         while cproton.pn_messenger_incoming(self.messenger) > 0:
+            message = cproton.pn_message()
             cproton.pn_messenger_get(self.messenger, message)
             error = cproton.pn_messenger_errno(self.messenger)
             if error:
