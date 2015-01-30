@@ -56,6 +56,7 @@ def get_extra_link_args():
 
 # pylint: disable=R0904
 class PyTest(TestCommand):
+
     """TestCommand to run suite using py.test"""
     test_args = []
     test_suite = True
@@ -99,20 +100,34 @@ setup(
         'Programming Language :: Python :: 2.7',
     ],
     keywords='ibm mqlight',
-    packages=find_packages(exclude=['tests']),
-    package_data={'mqlight': ['*.dll', 'libqpid-proton*', 'samples/*.py']},
+    packages=find_packages(
+        exclude=['tests']),
+    package_data={
+        'mqlight': [
+            '*.dll',
+            'libqpid-proton*',
+            'samples/*.py',
+            'licenses/*']},
     ext_package='mqlight',
     ext_modules=[
-        Extension(name='_cproton',
-                  sources=get_sources(),
-                  include_dirs=[path.join(HERE, 'include')],
-                  library_dirs=['mqlight'],
-                  libraries=['qpid-proton'],
-                  runtime_library_dirs=get_runtime_library_dirs(),
-                  extra_link_args=get_extra_link_args()),
+        Extension(
+            name='_cproton',
+            sources=get_sources(),
+            include_dirs=[
+                path.join(
+                    HERE,
+                    'include')],
+            library_dirs=['mqlight'],
+            libraries=['qpid-proton'],
+            runtime_library_dirs=get_runtime_library_dirs(),
+            extra_link_args=get_extra_link_args()),
     ],
     test_suite='tests',
-    tests_require=['pytest_pep8', 'pytest_timeout', 'pytest', 'mock'],
-    cmdclass={'test': PyTest},
-    zip_safe=True
-)
+    tests_require=[
+        'pytest_pep8',
+        'pytest_timeout',
+        'pytest',
+        'mock'],
+    cmdclass={
+        'test': PyTest},
+    zip_safe=True)
