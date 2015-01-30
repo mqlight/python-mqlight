@@ -68,7 +68,9 @@ class _MQLightMessage(object):
             else:
                 LOG.data(NO_CLIENT_ID, 'setting the body format as data')
                 cproton.pn_message_set_format(self._msg, cproton.PN_DATA)
-                cproton.pn_message_load_data(self._msg, str(value))
+                cproton.pn_message_load_data(
+                    self._msg,
+                    ''.join(str(i) for i in value))
             self._body = self._get_body()
             LOG.data(NO_CLIENT_ID, 'body:', self._body)
         LOG.exit('_MQLightMessage._set_body', NO_CLIENT_ID, None)
@@ -99,16 +101,6 @@ class _MQLightMessage(object):
                         continue
                     else:
                         break
-                if data_type == cproton.PN_STRING:
-                    result = str(result)
-                else:
-                    # If the data is not text we first try to parse it into a
-                    # python object
-                    try:
-                        result = ast.literal_eval(result)
-                    except Exception:
-                        # Otherwise we store it as a list
-                        result = list(result)
             else:
                 result = self._body
         LOG.exit('_MQLightMessage._get_body', NO_CLIENT_ID, result)

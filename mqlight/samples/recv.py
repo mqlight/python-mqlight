@@ -177,10 +177,9 @@ def message(message_type, data, delivery):
             delivery['message']['confirm_delivery']()
             client.stop()
         else:
-            if isinstance(data, list):
-                print('{0} ...'.format(data[:50]))
-            else:
-                print(data)
+            print('{0}{1}'.format(
+                data[:50],
+                (' ...' if len(data) > 50 else '')))
             if verbose:
                 print(delivery)
             if delay > 0:
