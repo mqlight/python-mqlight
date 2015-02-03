@@ -22,6 +22,13 @@ from codecs import open as codecs_open
 from os import path, environ
 from platform import system
 
+if not sys.version_info[0] == 2:
+    print('ERROR: Python 3 is not currently supported.')
+    sys.exit(1)
+elif not sys.version_info[1] >= 7:
+    print('ERROR: Python 2.7 or newer is required')
+    sys.exit(1)
+
 HERE = path.abspath(path.dirname(__file__))
 with codecs_open(path.join(HERE, 'description.rst'), encoding='utf-8') as f:
     LONG_DESCRIPTION = f.read()
