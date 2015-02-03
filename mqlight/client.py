@@ -1023,15 +1023,7 @@ class Client(object):
         LOG.parms(self._id, 'msg:', msg)
         msg.connection_id = self._connection_id
 
-        # If body is a JSON'ified object, try to parse it
-        if msg.content_type == 'application/json':
-            try:
-                data = loads(msg.body)
-            except Exception as exc:
-                LOG.error('Client._process_message', self._id, exc)
-        else:
-            data = msg.body
-
+        data = msg.body
         topic = urlparse(msg.address).path[1:]
         auto_confirm = True
         qos = QOS_AT_MOST_ONCE
