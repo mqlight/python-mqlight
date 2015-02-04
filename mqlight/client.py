@@ -1928,7 +1928,10 @@ class Client(object):
                                             self._id,
                                             DRAIN)
                                         self._on_drain_required = False
-                                        self._on_state_changed(DRAIN, None)
+                                        callback_thread = threading.Thread(
+                                            target=self._on_state_changed,
+                                            args=(DRAIN, None))
+                                        callback_thread.start()
 
                                     # invoke on_sent, if specified
                                     if in_flight['on_sent']:
@@ -1951,7 +1954,7 @@ class Client(object):
                                     # schedule remaining work for processing in
                                     # the future
                                     timer = threading.Timer(
-                                        1,
+                                        0.1,
                                         send_outbound_msg)
                                     timer.start()
                                     LOG.exit_often(
@@ -2065,8 +2068,8 @@ class Client(object):
                 })
 
             # Reconnect can result in many callbacks being fired in a single
-            # tick, group these together into a single setImmediate - to avoid
-            # them being spread out over a, potentially, long period of time.
+            # tick, group these together into a single chunk to avoid them
+            # being spread out over a, potentially, long period of time.
             if not self._queued_send_callbacks:
                 def immediate():
                     do_reconnect = False
@@ -2093,7 +2096,7 @@ class Client(object):
                         do_reconnect |= _should_reconnect(invocation['error'])
                     if do_reconnect:
                         self._reconnect()
-                timer = threading.Timer(0.5, immediate)
+                timer = threading.Thread(target=immediate)
                 timer.daemon = True
                 timer.start()
 
@@ -2254,11 +2257,11 @@ class Client(object):
                 err = mqlexc.MQLightError(exc)
 
         if on_subscribed:
-            def next_tick():
+            def on_subscribed_callback():
                 on_subscribed(err, topic_pattern, original_share_value)
-            timer1 = threading.Timer(1, next_tick)
-            timer1.daemon = True
-            timer1.start()
+            callback_thread = threading.Thread(target=on_subscribed_callback)
+            callback_thread.daemon = True
+            callback_thread.start()
 
         if err:
             LOG.error('Client.subscribe', self._id, err)
@@ -2467,16 +2470,19 @@ class Client(object):
             self._messenger.unsubscribe(address, ttl)
 
             if on_unsubscribed:
-                def next_tick():
-                    LOG.entry('Client.unsubscribe.on_unsubscribed', self._id)
+                def on_unsubscribed_callback():
+                    LOG.entry(
+                        'Client.unsubscribe.on_unsubscribed_callback',
+                        self._id)
                     on_unsubscribed(None, topic_pattern, original_share_value)
                     LOG.exit(
-                        'Client.unsubscribe.on_unsubscribed',
+                        'Client.unsubscribe.on_unsubscribed_callback',
                         self._id,
                         None)
-                timer = threading.Timer(1, next_tick)
-                timer.daemon = True
-                timer.start()
+                callback_thread = threading.Thread(
+                    target=on_unsubscribed_callback)
+                callback_thread.daemon = True
+                callback_thread.start()
 
             # if no errors, remove this from the stored list of subscriptions
             for sub in self._subscriptions:

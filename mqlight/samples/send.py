@@ -25,7 +25,8 @@ import threading
 
 SEQUENCE = 0
 SERVICE = 'amqp://localhost'
-TIMEOUT = 3
+TIMEOUT = 3.0
+LOCK = threading.RLock()
 
 parser = argparse.ArgumentParser(
     description='Send a message to an MQ Light server.')
@@ -178,26 +179,28 @@ def send_message():
     Sends a message
     """
     if len(messages) > 0:
-        send_complete.clear()
-        body = messages.pop(0)
-        options = {'qos': mqlight.QOS_AT_LEAST_ONCE}
-        if message_ttl is not None:
-            options['ttl'] = message_ttl * 1000
-        if sequence and args.file is None:
-            global SEQUENCE
-            SEQUENCE += 1
-            body = '{0}: {1}'.format(SEQUENCE, body)
-        if client.send(
-                topic=topic,
-                data=body,
-                options=options,
-                on_sent=sent):
-            # Send the next message now
-            send_next_message()
-        else:
-            # There's a backlog of messages to send, so wait until the backlog
-            # is cleared before sending any more
-            send_complete.wait(TIMEOUT)
+        with LOCK:
+            send_complete.clear()
+            body = messages.pop(0)
+            options = {'qos': mqlight.QOS_AT_LEAST_ONCE}
+            if message_ttl is not None:
+                options['ttl'] = message_ttl * 1000
+            if sequence and args.file is None:
+                global SEQUENCE
+                SEQUENCE += 1
+                body = '{0}: {1}'.format(SEQUENCE, body)
+            if client.send(
+                    topic=topic,
+                    data=body,
+                    options=options,
+                    on_sent=sent):
+                # Send the next message now
+                send_next_message()
+            else:
+                # There's a backlog of messages to send, so wait until the backlog
+                # is cleared before sending any more
+                send_complete.wait(TIMEOUT)
+
     else:
         # No more messages to send, so disconnect
         client.stop()

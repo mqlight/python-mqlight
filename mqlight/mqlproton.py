@@ -16,7 +16,6 @@ IBM Corp.
 </copyright>
 """
 import cproton
-import ast
 from . import mqlightexceptions as mqlexc
 import os
 from .mqlightlog import get_logger, NO_CLIENT_ID
