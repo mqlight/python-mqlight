@@ -197,8 +197,8 @@ def send_message():
                 # Send the next message now
                 send_next_message()
             else:
-                # There's a backlog of messages to send, so wait until the backlog
-                # is cleared before sending any more
+                # There's a backlog of messages to send, so wait until the
+                # backlog is cleared before sending any more
                 send_complete.wait(TIMEOUT)
 
     else:
