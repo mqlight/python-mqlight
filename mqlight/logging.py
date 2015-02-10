@@ -23,13 +23,13 @@ import signal
 import socket
 import platform
 import threading
-import mqlight
 import traceback
+import mqlight
 
 ENTRY_IND = '>-----------------------------------------------------------'
 EXIT_IND = '<-----------------------------------------------------------'
-HEADER_BANNER = '+---------------------------------------------------------' + \
-    '---------------------+'
+HEADER_BANNER = '+---------------------------------------------------------'\
+                '---------------------+'
 
 ALL = 100
 EXIT_OFTEN = 200
