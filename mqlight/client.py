@@ -1,19 +1,26 @@
+# <copyright
+# notice="lm-source-program"
+# pids="5725-P60"
+# years="2013,2014"
+# crc="3568777996" >
+# Licensed Materials - Property of IBM
+#
+# 5725-P60
+#
+# (C) Copyright IBM Corp. 2013, 2014
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with
+# IBM Corp.
+# </copyright>
 """
-<copyright
-notice="lm-source-program"
-pids="5725-P60"
-years="2013,2014"
-crc="3568777996" >
-Licensed Materials - Property of IBM
-
-5725-P60
-
-(C) Copyright IBM Corp. 2013, 2014
-
-US Government Users Restricted Rights - Use, duplication or
-disclosure restricted by GSA ADP Schedule Contract with
-IBM Corp.
-</copyright>
+mqlight
+~~~~~~~
+MQ Light is designed to allow applications to exchange discrete pieces of
+information in the form of messages. This might sound a lot like TCP/IP
+networking, and MQ Light does use TCP/IP under the covers, but MQ Light
+takes away much of the complexity and provides a higher level set of
+abstractions to build your applications with.
 """
 import uuid
 import threading
@@ -30,7 +37,7 @@ from json import loads
 from random import random
 from urlparse import urlparse
 from urllib import quote
-from pkg_resources import get_distribution
+from pkg_resources import get_distribution, DistributionNotFound
 
 CMD = ' '.join(sys.argv)
 if 'setup.py test' in CMD or 'unittest' in CMD:
@@ -42,7 +49,10 @@ else:
     # The connection retry interval in seconds
     CONNECT_RETRY_INTERVAL = 10
 
-__version__ = get_distribution('mqlight').version
+try:
+    __version__ = get_distribution('mqlight').version
+except DistributionNotFound:
+    __version__ = 1.0
 
 # Set up logging (to stderr by default). The level of output is
 # configured by the value of the MQLIGHT_NODE_LOG environment
@@ -463,7 +473,7 @@ def _generate_service_list(service, security_options):
 class Client(object):
 
     """
-    The Client class represents an MQLight client instance
+    The Client class represents an MQLight client instance.
     """
 
     def __init__(
@@ -473,22 +483,15 @@ class Client(object):
             security_options=None,
             on_started=None,
             on_state_changed=None):
-        """Constructs and starts a new :class:`Client <Client>`.
+        """Constructs and starts a new Client.
 
         :param service: when an instance of string, this is a URL to
             connect to. When an instance of list, this is a list of URLs
             to connect to - each will be tried in turn until either a
             connection is successfully established to one of the URLs, or
             all of the URLs have been tried. When an instance of function
-            is specified for this argument, then function is invoked each
-            time the client wants to establish a connection (e.g. for any
-            of the state transitions, on the state diagram shown earlier on
-            this page, which lead to the 'started' state) and is supplied
-            a single parameter containing a callback in the form
-            function(err, service). The function must supply the service
-            URL as either an instance of string or array to the callback
-            function and this will be treated in the same manner described
-            previously.
+            is specified for this argument, then the function is invoked each
+            time the Client wants to establish a connection.
         :param client_id: (optional) an identifier that is used to identify
             this client. Two different instances of Client can have the same
             id, however only one instance can be connected to the MQ Light
@@ -496,16 +499,23 @@ class Client(object):
             have the same id and both try to connect then the first
             instance to establish its connection is disconnected in favour
             of the second instance. If this property is not specified then
-            the client will generate a probabilistically unique ID.
+            the Client will generate a probabilistically unique ID.
         :param security_options: (optional) Any required security options for
             user name/password authentication and SSL.
-        :param on_started: (optional) a function to be called when the client
-            reaches the started state
-        :param on_state_changed: (optional) a function to be called when the
-            client changes state
-        :return: An instance of :class:`Client <Client>`
-        :raises TypeError: if any of the arguments is of an incorrect type
-        :raises mqlexc.InvalidArgumentError: if any of the arguments is invalid
+        :param on_started: (optional) A function to be called when the Client
+            reaches the started state. This function prototype must be
+            ``func(err)`` where ``err`` is ``None`` if the client started
+            correctly, otherwise it is the error message.
+        :param on_state_changed: (optional) A function to be called when the
+            client changes state. This function prototype must be
+            ``func(state, msg)`` where ``state`` is started, starting, stopped,
+            stopping, restarted, retrying, error or drain and ``msg`` is
+            ``None`` except if state is error, in this case it is the error
+            message.
+        :return: The Client instance.
+        :raises TypeError: if the type of any of the arguments is incorrect.
+        :raises mqlexc.InvalidArgumentError: if any of the arguments are
+            invalid.
         """
         LOG.entry('Client.constructor', NO_CLIENT_ID)
         LOG.parms(NO_CLIENT_ID, 'service:', service)
@@ -823,30 +833,24 @@ class Client(object):
         LOG.exit('Client._perform_connect', self._id, None)
 
     def start(self, on_started=None):
-        """Connects to the MQ Light service.
-
-        This method is asynchronous and calls the optional on_started function
-        when:
-        a) the client has successfully connected to the MQ Light service, or
-        b) the client.stop() method has been invoked before a successful
-        connection could be established, or
-        c) the client could not connect to the MQ Light service. The on_started
-        function should accept a single argument which will be set to None
-        if the client starts successfully or an Error object if the client
-        cannot connect to the MQ Light service or is stopped before a
-        connection can be established.
-
+        """Connects to the MQ Light service. This method is asynchronous and
+        calls the optional on_started function when the client has successfully
+        connected to the MQ Light service, or the ``client.stop()`` method has
+        been invoked before a successful connection could be established, or
+        the client could not connect to the MQ Light service.
         If this method is invoked while the client is in 'starting',
         'started' or 'retrying' states then the method will complete without
         performing any work or changing the state of the client. If this method
-        is invoked while the client is in 'stopping' state then it's
+        is invoked while the client is in 'stopping' state then its
         effect will be deferred until the client has transitioned into
         'stopped' state.
 
         :param on_started: (optional) function to call when the client reaches
-            the started state
-        :returns: The Client instance
-        :raises TypeError: if on_started is not a function
+            the started state. This function prototype must be ``func(err)``
+            where ``err`` is ``None`` if the client started successfully,
+            otherwise it is the error message.
+        :returns: The Client instance.
+        :raises TypeError: if on_started is not a function.
         """
         LOG.entry('Client.start', self._id)
 
@@ -1253,18 +1257,16 @@ class Client(object):
 
     def stop(self, on_stopped=None):
         """Disconnects the client from the MQ Light service, implicitly closing
-        any subscriptions that the client has open.
-
-        This method works asynchronously, and will invoke the optional
-        on_stopped function once the client has disconnected.
-
-        Calling client.stop() when the client is in 'stopping' or
-        'stopped' state has no effect. Calling client.stop() from
-        any other state results in the client disconnecting and the
+        any subscriptions that the client has open. This method works
+        asynchronously, and will invoke the optional on_stopped function once
+        the client has disconnected. Calling client.stop() when the client is
+        in 'stopping' or 'stopped' state has no effect. Calling client.stop()
+        from any other state results in the client disconnecting and the
         'stopped' event being generated.
 
         :param on_stopped: (optional) function to call when the connection is
-            closed
+            closed. This function prototype must be ``func(err)`` where
+            ``err`` is always ``None``.
         :raises TypeError: if on_stopped is not a function
         """
         LOG.entry('Client.stop', self._id)
@@ -1672,7 +1674,7 @@ class Client(object):
 
     def get_service(self):
         """
-        :returns: The service if connected otherwise None
+        :returns: The service if connected otherwise ``None``
         """
         if self.state == STARTED:
             LOG.data(self._id, 'service:', self._service)
@@ -1704,37 +1706,33 @@ class Client(object):
     def is_stopped(self):
         """
         :returns: ``True`` if the Client is in the stopped or stopping state,
-            otherwise  ``False``
+            otherwise ``False``
         """
         LOG.data(self._id, 'state:', self.state)
         return self.state in (STOPPED, STOPPING)
 
-    """
-    def _set_on_state_changed(self, on_state_changed):
-        LOG.entry('Client._set_on_state_changed', self._id)
-        if not hasattr(on_state_changed, '__call__'):
-            error = TypeError('on_state_changed must be a function')
-            LOG.error('Client._set_on_state_changed', self._id, error)
-            raise error
-        self._on_state_changed = on_state_changed
-        LOG.exit('Client._set_on_state_changed', self._id, None)
-
-    on_state_changed = property(_set_on_state_changed)
-    """
-
     def send(self, topic, data, options=None, on_sent=None):
         """Sends a message to the MQLight service.
 
-        :param topic: topic of the message
-        :param data: body of the message
-        :param options: (optional) message attributes
-        :param on_sent: (optional) function to call when the message is sent
+        :param topic: Topic of the message.
+        :param data: Body of the message.
+        :param options: (optional) Message attributes.
+        :param on_sent: (optional) A function to call when the message is sent
+            This function prototype must be ``func(err, topic, data, options)``
+            where ``err`` is ``None`` if the message was sent correctly,
+            otherwise it is the error message, ``topic`` is the topic of the
+            message, ``data`` is the body of the message, ``options`` are the
+            message attributes.
         :returns: ``True`` if this message was either sent or is the next to be
             sent or ``False`` if the message was queued in user memory, because
             either there was a backlog of messages, or the client was not in a
-            started state
-        :raises TypeError: if any of the arguments are invalid
-        :raises mqlexc.StoppedError: if the client is stopped
+            started state.
+        :raises TypeError: if the type of any of the arguments is incorrect.
+        :raises mqlexc.RangeError: if the value of any argument is not within
+            certain values.
+        :raises mqlexc.StoppedError: if the client is stopped.
+        :raises mqlexc.InvalidArgumentError: if any of the arguments are
+            invalid.
         """
         LOG.entry('Client.send', self._id)
         next_message = False
@@ -2123,15 +2121,26 @@ class Client(object):
         events each time a message arrives, at the MQ Light service, that
         matches topic pattern.
 
-        :param topic_pattern: topic to subscribe to
-        :param share: share name of the subscription
-        :param options:
-        :param on_subscribed: function to call when the subscription is done
-        :param on_message: function to call when a message is received
-        :return: the client instance
-        :raises TypeError:
-        :raises mqlexc.InvalidArgumentError: if any argument is invalid
+        :param topic_pattern: The topic to subscribe to.
+        :param share: The share name of the subscription.
+        :param options: Subscription attributes.
+        :param on_subscribed: A function to call when the subscription is done.
+            This function prototype must be ``func(err, pattern, share)`` where
+            ``err`` is ``None`` if the client subscribed successfully otherwise
+            the error message, ``pattern`` is the subscription pattern and
+            ``share`` is the share name.
+        :param on_message: function to call when a message is received.
+            his function prototype must be ``func(message_type, message)``
+            where ``message_type`` is 'message' if a message has been received
+            otherwise 'malformed' if a malformed message has been received and
+            ``message`` is the message.
+        :return: The client instance.
+        :raises TypeError: if the type of any of the arguments is incorrect.
+        :raises mqlexc.RangeError: if the value of any argument is not within
+            certain values.
         :raise mqlexc.StoppedError: if the client is stopped
+        :raises mqlexc.InvalidArgumentError: if any of the arguments are
+            invalid.
         """
         LOG.entry('Client.subscribe', self._id)
         if topic_pattern is None or topic_pattern == '':
@@ -2327,16 +2336,20 @@ class Client(object):
             previous call to subscribe.
         :param share: (optional) the share that was supplied in the previous
             call to subscribe.
-        :param options: (optional) The options argument accepts an object with
-            properties set to customise the unsubscribe behaviour.
+        :param options: (optional) Unsubscription attributes.
         :param on_unsubscribed: (optional) Invoked if the unsubscribe request
             has been processed successfully.
+            This function prototype must be ``func(err, pattern, share)``
+            where ``err`` is ``None`` if the client unsubscribed successfully
+            otherwise the error message, ``pattern`` is the unsubscription
+            pattern and ``share`` is the share name.
         :returns: The instance of the client.
-        :raises TypeError:
-        :raises mqlexc.RangeError:
-        :raises mqlexc.StoppedError:
-        :raises mqlexc.InvalidArgumentError: If the topic pattern parameter is
-            None.
+        :raises TypeError: if the type of any of the arguments is incorrect.
+        :raises mqlexc.RangeError: if the value of any argument is not within
+            certain values.
+        :raises mqlexc.StoppedError: if the client is stopped.
+        :raises mqlexc.InvalidArgumentError: if any of the arguments are
+            invalid.
         """
         LOG.entry('Client.unsubscribe', self._id)
         LOG.parms(self._id, 'topic_pattern:', topic_pattern)

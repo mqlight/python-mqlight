@@ -1,20 +1,18 @@
-"""
-<copyright
-notice="lm-source-program"
-pids="5725-P60"
-years="2013,2014"
-crc="3568777996" >
-Licensed Materials - Property of IBM
-
-5725-P60
-
-(C) Copyright IBM Corp. 2013, 2014
-
-US Government Users Restricted Rights - Use, duplication or
-disclosure restricted by GSA ADP Schedule Contract with
-IBM Corp.
-</copyright>
-"""
+# <copyright
+# notice="lm-source-program"
+# pids="5725-P60"
+# years="2013,2014"
+# crc="3568777996" >
+# Licensed Materials - Property of IBM
+#
+# 5725-P60
+#
+# (C) Copyright IBM Corp. 2013, 2014
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with
+# IBM Corp.
+# </copyright>
 
 
 class MQLightError(Exception):
@@ -40,8 +38,9 @@ class RangeError(MQLightError):
     """
     This is a subtype of MQLightError defined by the MQ Light client. It is
     considered a programming error. The underlying cause for this error are
-    the parameter values passed into a method are not within certain values
+    the parameter values passed into a method are not within certain values.
     """
+    pass
 
 
 class NetworkError(MQLightError):

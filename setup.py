@@ -114,7 +114,8 @@ setup(
             '*.dll',
             'libqpid-proton*',
             'samples/*.py',
-            'licenses/*']},
+            'licenses/*',
+            'README']},
     ext_package='mqlight',
     ext_modules=[
         Extension(

@@ -1,5 +1,5 @@
 Samples
-=======
+-------
 
 To run the samples, navigate to the `mqlight/samples/` folder.
 

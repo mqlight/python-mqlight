@@ -19,12 +19,16 @@ MQCOMM %Z% %W%           %I% %E% %U%
 /*   U.S. Copyright Office.                                           */
 /*   </copyright>                                                     */
 /**********************************************************************/
+-include $(BROOT)/MakeSystem/tools/python/python-vars.mk
 
-/* Merge rst docs into ../README.rst */
 #if defined(ArchitectureFamilyPc)
-DOC_SOURCES := $(sort $(wildcard Concat($(SPWD)@/,*.rst)))
+PYTHON_VRMF := $(shell FixPath($(BROOT)/bin64/mqvrmf) -P)
 #else
-DOC_SOURCES := $(sort $(wildcard Concat($(SPWD)/,*.rst)))
+PYTHON_VRMF := $(shell FixPath($(BROOT)/bin/mqvrmf) -P)
 #endif
-ConcatFiles($(BPWD)/../README.rst, $(DOC_SOURCES))
-ConcatFiles($(BPWD)/../description.rst, $(SPWD)/01_description.rst)
+
+/* Update the 'latest' version number in index.rst */
+ReplaceText($(SPWD)/release_notes.tmp.rst,9.9.999999999999,$(PYTHON_VRMF),$(SPWD)/release_notes.rst)
+
+/* Copy description.rst */
+ConcatFiles($(BPWD)/../description.rst, $(SPWD)/description.rst)
