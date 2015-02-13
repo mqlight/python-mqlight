@@ -30,5 +30,12 @@ PYTHON_VRMF := $(shell FixPath($(BROOT)/bin/mqvrmf) -P)
 /* Update the 'latest' version number in index.rst */
 ReplaceText($(SPWD)/release_notes.tmp.rst,9.9.999999999999,$(PYTHON_VRMF),$(SPWD)/release_notes.rst)
 
+/* Copy files required for sphinx-build */
+ConcatFiles($(BPWD)/conf.py, $(SPWD)/conf.py)
+ConcatFiles($(BPWD)/index.rst, $(SPWD)/index.rst)
+ConcatFiles($(BPWD)/release_notes.rst, $(SPWD)/release_notes.rst)
+ConcatFiles($(BPWD)/sample.rst, $(SPWD)/sample.rst)
+ConcatFiles($(BPWD)/description.rst, $(SPWD)/description.rst)
+
 /* Copy description.rst */
 ConcatFiles($(BPWD)/../description.rst, $(SPWD)/description.rst)

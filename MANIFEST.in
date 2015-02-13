@@ -1,6 +1,5 @@
 include *.rst
-include README
 recursive-include include *
-recursive-include licenses *
 recursive-include mqlight *
 recursive-include tests *.py
+recursive-include docs *.py *.rst
