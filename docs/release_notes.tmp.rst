@@ -20,7 +20,7 @@ Release notes
 9.9.999999999999
 ^^^^^^^^^^^^^^^^
 
-- ...
+- Various performance improvements
 
 1.0.2015020201b1
 ^^^^^^^^^^^^^^^^

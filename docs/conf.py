@@ -23,7 +23,10 @@ import os
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
-sys.path.append(os.path.abspath(os.environ['BROOT'] + '/appmsging/python/mqlight/build/lib.' + get_platform() + '-' + sys.version[0:3]))
+if os.getenv('BROOT') is not None:
+    sys.path.append(
+        '{0}/appmsging/python/mqlight/build/lib.{1}-{2}'.format(
+            os.environ['BROOT'], get_platform(), sys.version[0:3]))
 
 # -- General configuration ------------------------------------------------
 

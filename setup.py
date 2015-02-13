@@ -137,5 +137,5 @@ setup(
         'pytest',
         'mock'],
     cmdclass={
-        'test': PyTest},
-    zip_safe=True)
+        'test': PyTest}
+)
