@@ -117,7 +117,7 @@ class _MQLightMessage(object):
         # returning
         lval = cproton.pn_data_next(anno)     # Move to Map
         elements = 0
-        result = None
+        result = []
         # Check it actually is a Map
         if lval and cproton.pn_data_type(anno) == cproton.PN_MAP:
             if lval:
@@ -146,8 +146,8 @@ class _MQLightMessage(object):
                 LOG.exit(
                     '_MQLightMessage._get_delivery_annotations',
                     NO_CLIENT_ID,
-                    None)
-                return
+                    result)
+                return result
 
             cproton.pn_data_next(anno)    # Move to Map
             cproton.pn_data_enter(anno)   # Enter the Map
@@ -161,7 +161,6 @@ class _MQLightMessage(object):
             #   value      : the value of the delivery annotation entry
             #   value_type : the type of the delivery annotation value
             #   ('symbol' ,'string', or 'int32')
-            result = []
             while True:
                 if cproton.pn_data_type(anno) == cproton.PN_SYMBOL:
                     key = cproton.pn_data_get_symbol(anno).start
@@ -170,26 +169,20 @@ class _MQLightMessage(object):
                         value = None
                         value_type = None
                         data_type = cproton.pn_data_type(anno)
-                        add_entry = True
+                        add_entry = False
 
                         if data_type == cproton.PN_SYMBOL:
                             add_entry = True
                             value_type = 'symbol'
                             value = cproton.pn_data_get_symbol(anno).start
-                            break
                         elif data_type == cproton.PN_STRING:
                             add_entry = True
                             value_type = 'string'
                             value = cproton.pn_data_get_string(anno).start
-                            break
                         elif data_type == cproton.PN_INT:
                             add_entry = True
                             value_type = 'int32'
                             value = cproton.pn_data_get_atom(anno).u.as_int
-                            break
-                        else:
-                            add_entry = False
-                            break
 
                         if add_entry:
                             # e.g. { 'key': 'xopt-blah', 'key_type': 'symbol',
@@ -208,8 +201,6 @@ class _MQLightMessage(object):
                         break
 
                 cproton.pn_data_rewind(anno)
-            else:
-                result = None
         LOG.exit(
             '_MQLightMessage._get_delivery_annotations',
             NO_CLIENT_ID,
@@ -356,9 +347,9 @@ class _MQLightMessenger(object):
 
         if ssl_trust_certificate:
             if not os.path.isfile(ssl_trust_certificate):
-                msg = 'The file specified for ssl_trust_certificate ' + \
-                    ssl_trust_certificate + \
-                    ' does not exist or is not accessible'
+                msg = 'The file specified for ssl_trust_certificate {0} ' + \
+                    'does not exist or is not accessible'.format(
+                        ssl_trust_certificate)
                 raise mqlexc.SecurityError(msg)
         ssl_mode = cproton.PN_SSL_VERIFY_NULL
         if ssl_verify_name is not None:
@@ -378,7 +369,7 @@ class _MQLightMessenger(object):
 
         # throw exception if already connected
         if self.messenger:
-            raise mqlexc.NetworkError('already connected')
+            raise mqlexc.NetworkError('Already connected')
 
         # Create the messenger object and update the name in case messenger has
         # changed it
@@ -421,9 +412,9 @@ class _MQLightMessenger(object):
         url_protocol = service.scheme
         host_and_port = service.hostname
         if service.port:
-            host_and_port += ':' + str(service.port)
-        pattern = url_protocol + '://' + host_and_port + '/*'
-        validation_address = address + '/$1'
+            host_and_port += ':{0}'.format(service.port)
+        pattern = '{0}://{1}/*'.format(url_protocol, host_and_port)
+        validation_address = '{0}/$1'.format(address)
         LOG.data(NO_CLIENT_ID, 'pattern:', pattern)
         error = cproton.pn_messenger_route(
             self.messenger, pattern, validation_address)
@@ -501,7 +492,7 @@ class _MQLightMessenger(object):
         LOG.entry('_MQLightMessenger.status_error', NO_CLIENT_ID)
         LOG.parms(NO_CLIENT_ID, 'message:', message)
         if self.messenger is None:
-            raise mqlexc.NetworkError('not connected')
+            raise mqlexc.NetworkError('Not connected')
 
         delivery = cproton.pn_messenger_delivery(
             self.messenger, message.tracker)
@@ -510,10 +501,11 @@ class _MQLightMessenger(object):
         description = None
         if delivery:
             disposition = cproton.pn_delivery_remote(delivery)
-        if disposition:
-            condition = cproton.pn_disposition_condition(disposition)
-        if condition:
-            description = cproton.pn_condition_get_description(condition)
+            if disposition:
+                condition = cproton.pn_disposition_condition(disposition)
+                if condition:
+                    description = cproton.pn_condition_get_description(
+                        condition)
         LOG.exit(
             '_MQLightMessenger.status_error',
             NO_CLIENT_ID,
@@ -527,7 +519,7 @@ class _MQLightMessenger(object):
         LOG.entry('_MQLightMessenger.get_remote_idle_timeout', NO_CLIENT_ID)
         LOG.parms(NO_CLIENT_ID, 'address:', address)
         if self.messenger is None:
-            raise mqlexc.NetworkError('not connected')
+            raise mqlexc.NetworkError('Not connected')
 
         remote_idle_timeout = cproton.pn_messenger_get_remote_idle_timeout(
             self.messenger,
@@ -545,7 +537,7 @@ class _MQLightMessenger(object):
         LOG.entry('_MQLightMessenger.work', NO_CLIENT_ID)
         LOG.parms(NO_CLIENT_ID, 'timeout:', timeout)
         if self.messenger is None:
-            raise mqlexc.NetworkError('not connected')
+            raise mqlexc.NetworkError('Not connected')
 
         status = cproton.pn_messenger_work(self.messenger, timeout)
         LOG.exit('_MQLightMessenger.work', NO_CLIENT_ID, status)
@@ -561,12 +553,11 @@ class _MQLightMessenger(object):
         # throw exception if not connected
         if self.messenger is None:
             raise mqlexc.NetworkError('Not connected')
+
         # Find link based on address, and flow link credit.
         link = cproton.pn_messenger_get_link(self.messenger, address, False)
         if link:
             cproton.pn_link_flow(link, credit)
-        else:
-            LOG.parms(NO_CLIENT_ID, 'link:', None)
         LOG.exit('_MQLightMessenger.flow', NO_CLIENT_ID, None)
 
     def put(self, msg, qos):
@@ -584,9 +575,9 @@ class _MQLightMessenger(object):
         # mode is always set to first, as the MQ Light listener will
         # negotiate down any receiver settler mode to first.
         if qos not in (QOS_AT_MOST_ONCE, QOS_AT_LEAST_ONCE):
-            raise mqlexc.InvalidArgumentError('invalid qos argument')
+            raise mqlexc.InvalidArgumentError('Invalid QoS')
 
-        LOG.data(NO_CLIENT_ID, 'msg:', msg.message)
+        LOG.data(NO_CLIENT_ID, 'message:', msg.message)
         LOG.data(NO_CLIENT_ID, 'body:', msg.body)
         cproton.pn_messenger_put(self.messenger, msg.message)
         error = cproton.pn_messenger_errno(self.messenger)
@@ -685,7 +676,8 @@ class _MQLightMessenger(object):
                     LOG.data(
                         NO_CLIENT_ID,
                         'Link closed so ignoring received message for ' +
-                        'address: ' + cproton.pn_message_get_address(message))
+                        'address: {0}'.format(
+                            cproton.pn_message_get_address(message)))
                 else:
                     msg.link_address = cproton.pn_terminus_get_address(
                         cproton.pn_link_remote_target(link))
@@ -694,7 +686,8 @@ class _MQLightMessenger(object):
                 LOG.data(
                     NO_CLIENT_ID,
                     'No link associated with received message tracker for ' +
-                    'address: ' + cproton.pn_message_get_address(message))
+                    'address: {0}'.format(
+                        cproton.pn_message_get_address(message)))
         LOG.exit('_MQLightMessenger.receive', NO_CLIENT_ID, messages)
         return messages
 
@@ -853,7 +846,7 @@ class _MQLightMessenger(object):
             self.set_snd_settle_mode(cproton.PN_SND_UNSETTLED)
             self.set_rcv_settle_mode(cproton.PN_RCV_FIRST)
         else:
-            raise mqlexc.InvalidArgumentError('invalid qos')
+            raise mqlexc.InvalidArgumentError('Invalid QoS')
         cproton.pn_messenger_subscribe_ttl(self.messenger, address, ttl)
         cproton.pn_messenger_recv(self.messenger, -2)
         error = cproton.pn_messenger_errno(self.messenger)
@@ -865,7 +858,8 @@ class _MQLightMessenger(object):
         link = cproton.pn_messenger_get_link(self.messenger, address, False)
         if not link:
             # throw Error if unable to find a matching Link
-            raise mqlexc.MQLightError("unable to locate link for " + address)
+            raise mqlexc.MQLightError(
+                'unable to locate link for {0}'.format(address))
         while not cproton.pn_link_state(link) & cproton.PN_REMOTE_ACTIVE:
             cproton.pn_messenger_work(self.messenger, 50)
             error = cproton.pn_messenger_errno(self.messenger)
@@ -899,7 +893,8 @@ class _MQLightMessenger(object):
 
         if link is None:
             # throw Error if unable to find a matching Link
-            raise mqlexc.MQLightError('unable to locate link for ' + address)
+            raise mqlexc.MQLightError(
+                'unable to locate link for {0}'.format(address))
 
         if ttl == 0:
             cproton.pn_terminus_set_expiry_policy(

@@ -350,8 +350,8 @@ def _generate_service_list(service, security_options):
     service_list = []
     auth_user = None
     auth_password = None
-    for i in range(len(input_service_list)):
-        service_url = urlparse(input_service_list[i])
+    for i, service in enumerate(input_service_list):
+        service_url = urlparse(service)
         protocol = service_url.scheme
 
         # Check for auth details
@@ -411,7 +411,7 @@ def _generate_service_list(service, security_options):
             error = mqlexc.InvalidArgumentError(
                 'Unsupported URL {0} specified for service. '
                 'Only the amqp or amqps protocol are supported.'.format(
-                    input_service_list[i]))
+                    service))
             LOG.error('_generate_service_list', NO_CLIENT_ID, error)
             raise error
 
@@ -427,7 +427,7 @@ def _generate_service_list(service, security_options):
         if host is None or host == '':
             error = mqlexc.InvalidArgumentError(
                 'Unsupported URL {0} specified for service. Must supply '
-                'a hostname.'.format(input_service_list[i]))
+                'a hostname.'.format(service))
             LOG.error('_generate_service_list', NO_CLIENT_ID, error)
             raise error
 
@@ -443,7 +443,7 @@ def _generate_service_list(service, security_options):
         if path and path != '/':
             error = mqlexc.InvalidArgumentError(
                 'Unsupported URL {0} paths ({1}) cannot be part of a '
-                'service URL.'.format(input_service_list[i], path))
+                'service URL.'.format(service, path))
             LOG.error('_generate_service_list', NO_CLIENT_ID, error)
             raise error
 
@@ -461,7 +461,7 @@ def _generate_service_list(service, security_options):
         if service_url.netloc.lower() != url:
             error = mqlexc.InvalidArgumentError(
                 'Unsupported URL {0} is not valid'.format(
-                    input_service_list[i]))
+                    service))
             LOG.error('_generate_service_list', NO_CLIENT_ID, error)
             raise error
 
@@ -1195,29 +1195,30 @@ class Client(object):
         mal_desc = 'x-opt-message-malformed-description'
         mal_ccsi = 'x-opt-message-malformed-MQMD-CodedCharSetId'
         mal_form = 'x-opt-message-malformed-MQMD.Format'
-        if annots is not None:
-            for i in range(len(annots)):
-                if annots[i] and annots[i].key:
-                    if annots[i].key == mal_cond:
-                        malformed['condition'] = annots[i].value
-                    elif annots[i].key == mal_desc:
-                        malformed['description'] = annots[i].value
-                    elif annots[i].key == mal_ccsi:
-                        malformed['MQMD']['CodedCharSetId'] = int(
-                            annots[i].value)
-                    elif annots[i].key == mal_form:
-                        malformed['MQMD']['Format'] = annots[i].value
 
+        for annot in annots:
+            if 'key' in annot:
+                if annots['key'] == mal_cond:
+                    malformed['condition'] = annot['value']
+                elif annot['key'] == mal_desc:
+                    malformed['description'] = annot['value']
+                elif annot['key'] == mal_ccsi:
+                    malformed['MQMD']['CodedCharSetId'] = int(annot['value'])
+                elif annot['key'] == mal_form:
+                    malformed['MQMD']['Format'] = annot['value']
+
+        state = MESSAGE
         if malformed['condition']:
+            state = MALFORMED
             delivery['malformed'] = malformed
-            subscription['on_message'](MALFORMED, msg.body, delivery)
-        else:
-            LOG.data(
-                self._id,
-                MESSAGE,
-                data,
-                delivery)
-            subscription['on_message'](MESSAGE, data, delivery)
+
+        LOG.state(
+            'Client._process_message',
+            self._id,
+            state,
+            data,
+            delivery)
+        subscription['on_message'](state, data, delivery)
 
         if self.is_stopped():
             LOG.debug(
@@ -1926,10 +1927,10 @@ class Client(object):
                                             self._id,
                                             DRAIN)
                                         self._on_drain_required = False
-                                        callback_thread = threading.Thread(
+                                        state_callback = threading.Thread(
                                             target=self._on_state_changed,
                                             args=(DRAIN, None))
-                                        callback_thread.start()
+                                        state_callback.start()
 
                                     # invoke on_sent, if specified
                                     if in_flight['on_sent']:
@@ -1937,11 +1938,13 @@ class Client(object):
                                             'Client.send.send_outbound_msg.'
                                             'cb1',
                                             self._id)
-                                        in_flight['on_sent'](
-                                            err,
-                                            in_flight['topic'],
-                                            in_flight['msg'].body,
-                                            in_flight['options'])
+                                        sent_callback = threading.Thread(
+                                            target=in_flight['on_sent'],
+                                            args=(err,
+                                                  in_flight['topic'],
+                                                  in_flight['msg'].body,
+                                                  in_flight['options']))
+                                        sent_callback.start()
                                         LOG.exit(
                                             'Client.send.send_outbound_msg.'
                                             'cb1',
@@ -2415,25 +2418,21 @@ class Client(object):
         subscription_address = self._service + '/' + topic_pattern
 
         # Check that there is actually a subscription for the pattern and share
-        subscribed = False
         for sub in self._subscriptions:
             if sub['address'] == subscription_address and sub[
                     'share'] == original_share_value:
-                subscribed = True
                 break
-        if not subscribed:
+        else:
             for sub in self._queued_subscriptions:
                 if (sub['address'] == subscription_address and
                         sub['share'] == original_share_value and
                         not sub['noop']):
-                    subscribed = True
                     break
-
-        if not subscribed:
-            err = mqlexc.UnsubscribedError(
-                'client is not subscribed to this address:' + address)
-            LOG.error('Client.unsubscribe', self._id, err)
-            raise err
+            else:
+                err = mqlexc.UnsubscribedError(
+                    'client is not subscribed to this address:' + address)
+                LOG.error('Client.unsubscribe', self._id, err)
+                raise err
 
         def queue_unsubscribe():
             """Add the unsubscribe request to the internal queue"""
@@ -2443,7 +2442,8 @@ class Client(object):
             noop = False
             for sub in self._queued_subscriptions:
                 if sub['address'] == subscription_address and sub[
-                        'share'] == original_share_value:
+                        'share'] == original_share_value and not sub['noop']:
+                    sub['noop'], noop = True
                     noop = True
 
             # queue unsubscribe request as appropriate
