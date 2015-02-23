@@ -122,6 +122,7 @@ send_complete = threading.Event()
 
 if args.repeat is not None and repeat > 1:
     messages = messages * repeat
+PENDING = len(messages)
 
 security_options = {}
 if args.trust_certificate is not None:
@@ -178,7 +179,7 @@ def send_message():
     """
     Sends a message
     """
-    if len(messages) > 0:
+    if messages:
         with LOCK:
             send_complete.clear()
             body = messages.pop(0)
@@ -201,15 +202,13 @@ def send_message():
                 # backlog is cleared before sending any more
                 send_complete.wait(TIMEOUT)
 
-    else:
-        # No more messages to send, so disconnect
-        client.stop()
-
 
 def sent(err, topic, data, options):
     """
     Message sent callback
     """
+    global PENDING
+    PENDING -= 1
     if err:
         error('Problem with send request: {0}'.format(err))
     else:
@@ -217,6 +216,9 @@ def sent(err, topic, data, options):
             print('{0}{1}'.format(
                 data[:50],
                 (' ...' if len(data) > 50 else '')))
+    # No more pending messages, stop the client
+    if PENDING == 0:
+        client.stop()
 
 
 def error(err):
