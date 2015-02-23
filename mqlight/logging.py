@@ -103,7 +103,8 @@ class MQLightLog(object):
 
     def __init__(self, name):
         self._log = logging.getLogger(name)
-        self._level = LEVELS[os.getenv('MQLIGHT_PYTHON_LOG', DEFAULT_LEVEL)]
+        self._level = LEVELS.get(
+            os.getenv('MQLIGHT_PYTHON_LOG', DEFAULT_LEVEL).upper())
         self._ffdc_sequence = 0
         self._stack = DEFAULT_STACK
 
