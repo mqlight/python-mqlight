@@ -361,9 +361,8 @@ def _generate_service_list(service, security_options):
                 auth_password = service_url.password
             else:
                 error = mqlexc.InvalidArgumentError(
-                    'URLs supplied via the service property must '
-                    'specify both a user name and a password value, '
-                    'or omit both values')
+                    'URLs supplied via the service property must specify both '
+                    'a user name and a password value, or omit both values')
                 LOG.error('_generate_service_list', NO_CLIENT_ID, error)
                 raise error
 
@@ -417,14 +416,13 @@ def _generate_service_list(service, security_options):
 
         # Temporary disable amqps
         if protocol == 'amqps':
-            error = NotImplementedError(
-                'SSL is currently not implemented')
+            error = NotImplementedError('SSL is currently not implemented')
             LOG.error('_genere_service_list', NO_CLIENT_ID, error)
             raise error
 
         # Check we have a hostname
         host = service_url.hostname
-        if host is None or host == '':
+        if not host:
             error = mqlexc.InvalidArgumentError(
                 'Unsupported URL {0} specified for service. Must supply '
                 'a hostname.'.format(service))
@@ -450,14 +448,14 @@ def _generate_service_list(service, security_options):
         # Check that we can reconstruct the netloc
         url = host
         if hasattr(service_url, 'port') and service_url.port is not None:
-            url += ':' + str(service_url.port)
+            url += ':{0}'.format(service_url.port)
         credentials = None
         if service_url.username:
             credentials = service_url.username.lower()
         if service_url.password:
             credentials += ':' + service_url.password.lower()
         if service_url.username or service_url.password:
-            url = credentials + '@' + url
+            url = '{0}@{1}'.format(credentials, url)
         if service_url.netloc.lower() != url:
             error = mqlexc.InvalidArgumentError(
                 'Unsupported URL {0} is not valid'.format(
@@ -517,7 +515,7 @@ class Client(object):
         :raises mqlexc.InvalidArgumentError: if any of the arguments are
             invalid.
         """
-        LOG.entry('Client.constructor', NO_CLIENT_ID)
+        LOG.entry('Client.__init__', NO_CLIENT_ID)
         LOG.parms(NO_CLIENT_ID, 'service:', service)
         LOG.parms(NO_CLIENT_ID, 'client_id:', client_id)
         LOG.parms(NO_CLIENT_ID, 'security_options:', security_options)
@@ -540,7 +538,7 @@ class Client(object):
                         'service contains unsupported file URI of {0}'
                         ', only file:///path or file://localhost/path are '
                         ' supported.'.format(service))
-                    LOG.error('Client.constructor', NO_CLIENT_ID, error)
+                    LOG.error('Client.__init__', NO_CLIENT_ID, error)
                     raise error
                 service_function = _get_file_service_function(service_url.path)
 
@@ -555,13 +553,13 @@ class Client(object):
             error = mqlexc.InvalidArgumentError(
                 'Client identifier {0} is longer than the maximum ID length '
                 'of 48'.format(client_id))
-            LOG.error('Client.constructor', NO_CLIENT_ID, error)
+            LOG.error('Client.__init__', NO_CLIENT_ID, error)
             raise error
 
         # If client id is not a string then throw an error
         if not isinstance(client_id, str):
             error = TypeError('Client identifier must be a str')
-            LOG.error('Client.constructor', NO_CLIENT_ID, error)
+            LOG.error('Client.__init__', NO_CLIENT_ID, error)
             raise error
 
         # currently client ids are restricted, reject any invalid ones
@@ -570,7 +568,7 @@ class Client(object):
             error = mqlexc.InvalidArgumentError(
                 'Client Identifier {0} contains invalid char: {1}'.format(
                     client_id, matches.group(0)))
-            LOG.error('Client.constructor', NO_CLIENT_ID, error)
+            LOG.error('Client.__init__', NO_CLIENT_ID, error)
             raise error
 
         # User/password must either both be present, or both be absent.
@@ -583,11 +581,11 @@ class Client(object):
                     error = mqlexc.InvalidArgumentError(
                         'both user and password properties must be '
                         'specified together')
-                    LOG.error('Client.constructor', NO_CLIENT_ID, error)
+                    LOG.error('Client.__init__', NO_CLIENT_ID, error)
                     raise error
             else:
                 error = TypeError('security_options must be a dict')
-                LOG.error('Client.constructor', NO_CLIENT_ID, error)
+                LOG.error('Client.__init__', NO_CLIENT_ID, error)
                 raise error
 
             # Validate the ssl security options
@@ -597,32 +595,32 @@ class Client(object):
                         'ssl_verify_name value {0} is invalid. '
                         'Must evaluate to True of False'.format(
                             s_o.ssl_verify_name))
-                    LOG.error('Client.constructor', NO_CLIENT_ID, error)
+                    LOG.error('Client.__init__', NO_CLIENT_ID, error)
                     raise error
             if s_o.ssl_trust_certificate:
                 if not isinstance(s_o.ssl_trust_certificate, str):
                     error = TypeError(
                         'ssl_trust_certificate value {0} is invalid. '
                         'Must be a string'.format(s_o.ssl_trust_certificate))
-                    LOG.error('Client.constructor', NO_CLIENT_ID, error)
+                    LOG.error('Client.__init__', NO_CLIENT_ID, error)
                     raise error
                 if not os.path.isfile(s_o.ssl_trust_certificate):
                     error = TypeError(
                         'The file specified for ssl_trust_certificate is not '
                         'a regular file')
-                    LOG.error('Client.constructor', NO_CLIENT_ID, error)
+                    LOG.error('Client.__init__', NO_CLIENT_ID, error)
                     raise error
         else:
             s_o = SecurityOptions({})
 
         if on_started and not hasattr(on_started, '__call__'):
             error = TypeError('on_started must be a function')
-            LOG.error('Client.constructor', NO_CLIENT_ID, error)
+            LOG.error('Client.__init__', NO_CLIENT_ID, error)
             raise error
 
         if on_state_changed and not hasattr(on_state_changed, '__call__'):
             error = TypeError('on_state_changed must be a function')
-            LOG.error('Client.constructor', NO_CLIENT_ID, error)
+            LOG.error('Client.__init__', NO_CLIENT_ID, error)
             raise error
 
         # Save the required data as client fields
@@ -693,7 +691,7 @@ class Client(object):
                     self._id,
                     'stopped previously active client with same client id')
                 err = mqlexc.LocalReplacedError()
-                LOG.error('Client.constructor', self._id, err)
+                LOG.error('Client.__init__', self._id, err)
                 if previous_active_client._on_state_changed:
                     previous_active_client._on_state_changed(ERROR, err)
 
@@ -709,7 +707,7 @@ class Client(object):
                 if on_started:
                     on_started(err)
             self._perform_connect(connect_callback, service, True)
-        LOG.exit('Client.constructor', self._id, None)
+        LOG.exit('Client.__init__', self._id, None)
 
     def _perform_connect(self, on_started, service, new_client):
         """
@@ -916,8 +914,7 @@ class Client(object):
                 self._id,
                 'client._queued_subscriptions:',
                 self._queued_subscriptions)
-            while (len(self._queued_subscriptions) > 0 and
-                   self.state == STARTED):
+            while self._queued_subscriptions and self.state == STARTED:
                 sub = self._queued_subscriptions.pop(0)
                 if sub['noop']:
                     # no-op so just trigger the callback without actually
@@ -937,7 +934,7 @@ class Client(object):
                 self._id,
                 'client._queued_unsubscribes:',
                 self._queued_unsubscribes)
-            while len(self._queued_unsubscribes) > 0 and self.state == STARTED:
+            while self._queued_unsubscribes and self.state == STARTED:
                 sub = self._queued_unsubscribes.pop(0)
                 if sub['noop']:
                     # no-op so just trigger the callback without actually
@@ -957,7 +954,7 @@ class Client(object):
                 self._id,
                 'client._queued_sends:',
                 self._queued_sends)
-            while len(self._queued_sends) > 0 and self.state == STARTED:
+            while self._queued_sends and self.state == STARTED:
                 remaining = len(self._queued_sends)
                 msg = self._queued_sends.pop(0)
                 self.send(msg.topic, msg.data, msg.options, msg.callback)
@@ -976,23 +973,22 @@ class Client(object):
         callback set in subscribe() is called when a message is received.
         """
         LOG.entry_often('Client._check_for_messages', self._id)
-        if self.get_state() != STARTED or len(
-                self._subscriptions) == 0:
+        if self.get_state() != STARTED or not self._subscriptions:
             LOG.exit_often('Client._check_for_messages', self._id, None)
             return
         requeue = True
         try:
             messages = self._messenger.receive(50)
-            if messages and len(messages) > 0:
+            if messages:
                 LOG.debug(
                     self._id,
                     'received {0} messages'.format(len(messages)))
-                for message in range(len(messages)):
+                for i, message in enumerate(messages):
                     LOG.debug(
                         self._id,
-                        'processing message {0}'.format(message))
-                    self._process_message(messages[message])
-                    if message < (len(messages) - 1):
+                        'processing message {0}'.format(i))
+                    self._process_message(message)
+                    if i < (len(messages) - 1):
                         # Unless this is the last pass around the loop, call
                         # work() so that Messenger has a chance to respond to
                         # any heartbeat requests that may have arrived from the
@@ -1065,8 +1061,7 @@ class Client(object):
                 err)
         subscription = matched_subs[0]
         if subscription:
-            qos = subscription['qos']
-            if qos == QOS_AT_LEAST_ONCE:
+            if subscription['qos'] == QOS_AT_LEAST_ONCE:
                 auto_confirm = subscription['auto_confirm']
             subscription['unconfirmed'] += 1
         else:
@@ -1174,7 +1169,7 @@ class Client(object):
         if link_address:
             delivery['destination'] = {}
             link = link_address
-            if 'share:' in link and link.index('share:') == 0:
+            if link.startswith('share:'):
                 # Remove 'share:' prefix from link name
                 link = link[6:len(link_address)]
                 # Extract share name and add to delivery information
@@ -1312,7 +1307,7 @@ class Client(object):
                     client._heartbeat_timeout.cancel()
 
                 # Clear all queued sends as we are disconnecting
-                while len(self._queued_sends) > 0:
+                while self._queued_sends:
                     msg = self._queued_sends.pop(0)
 
                     def next_tick():
@@ -1431,34 +1426,33 @@ class Client(object):
 
         # Try each service in turn until we can successfully connect, or
         # exhaust the list
-        for i in range(len(self._service_list)):
-            service = self._service_list[i]
+        for i, service in enumerate(self._service_list):
             try:
                 # check if we will be providing authentication information
                 auth = None
+                user = None
+                password = None
                 if self._security_options.url_user is not None:
-                    auth = quote(str(self._security_options.url_user))
-                    auth += ':'
-                    auth += quote(str(self._security_options.url_password))
-                    auth += '@'
+                    user = quote(str(self._security_options.url_user))
+                    password = quote(str(self._security_options.url_password))
                 elif self._security_options.property_user is not None:
-                    auth = quote(str(self._security_options.property_user))
-                    auth += ':'
-                    auth += quote(
+                    user = quote(str(self._security_options.property_user))
+                    password = quote(
                         str(self._security_options.property_password))
-                    auth += '@'
+                if user and password:
+                    auth = '{0}:{1}@'.format(user, password)
                 log_url = None
                 # reparse the service url to prepend authentication information
                 # back on as required
                 if auth:
                     service_url = urlparse(service)
-                    service = service_url.scheme + \
-                        '://' + auth + service_url.hostname
+                    service = '{0}://{1}{2}'.format(
+                        service_url.scheme,
+                        auth,
+                        service_url.hostname)
                     if service_url.port:
-                        service += ':' + str(service_url.port)
-                    log_url = service_url.scheme + '://' + \
-                        re.sub(r':[^:]+@', ':********@', auth) + \
-                        service_url.hostname + ':' + str(service_url.port)
+                        service = '{0}:{1}'.format(service, service_url.port)
+                    log_url = re.sub(r':[^:]+@', ':********@', service)
                 else:
                     log_url = service
                 LOG.data(self._id, 'attempting to connect to: ', log_url)
@@ -1637,8 +1631,10 @@ class Client(object):
         LOG.entry('Client._reconnect', self._id)
         if self.state != STARTED:
             if self.is_stopped():
-                return
+                LOG.exit('Client._reconnect', self._id, None)
+                return None
             elif self.state == RETRYING:
+                LOG.exit('Client._reconnect', self._id, self)
                 return self
         self._set_state(RETRYING)
 
@@ -1873,7 +1869,7 @@ class Client(object):
                                 self._id,
                                 'length:',
                                 len(self._outstanding_sends))
-                            while len(self._outstanding_sends) > 0:
+                            while self._outstanding_sends:
                                 in_flight = self._outstanding_sends[0:1][0]
                                 status = str(self._messenger.status(
                                     in_flight['msg']))
@@ -1977,7 +1973,7 @@ class Client(object):
                             error)
 
                         # Error so empty the outstanding_sends array
-                        while len(self._outstanding_sends) > 0:
+                        while self._outstanding_sends:
                             in_flight = self._outstanding_sends.pop(0)
                             if in_flight['qos'] == QOS_AT_LEAST_ONCE:
                                 # Retry AT_LEAST_ONCE messages
@@ -2074,7 +2070,7 @@ class Client(object):
             if not self._queued_send_callbacks:
                 def immediate():
                     do_reconnect = False
-                    while len(self._queued_send_callbacks) > 0:
+                    while self._queued_send_callbacks:
                         invocation = self._queued_send_callbacks.pop(0)
                         if invocation['on_sent']:
                             if invocation['qos'] == QOS_AT_MOST_ONCE:
@@ -2296,7 +2292,7 @@ class Client(object):
                 self._reconnect()
         else:
             # if no errors, add this to the stored list of subscriptions
-            is_first_sub = (len(self._subscriptions) == 0)
+            is_first_sub = not self._subscriptions
             LOG.data(self._id, 'is_first_sub:', is_first_sub)
 
             self._subscriptions.append({
