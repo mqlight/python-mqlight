@@ -1061,7 +1061,8 @@ class Client(object):
                 err)
         subscription = matched_subs[0]
         if subscription:
-            if subscription['qos'] == QOS_AT_LEAST_ONCE:
+            qos = subscription['qos']
+            if qos == QOS_AT_LEAST_ONCE:
                 auto_confirm = subscription['auto_confirm']
             subscription['unconfirmed'] += 1
         else:
