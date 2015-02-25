@@ -152,9 +152,10 @@ def send_next_message():
     """
     Sends the next message
     """
-    if delay > 0:
-        time.sleep(delay)
-    send_message()
+    if len(messages) > 0:
+        if delay > 0:
+            time.sleep(delay)
+        send_message()
 
 
 def started(err):
