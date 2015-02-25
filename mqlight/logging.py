@@ -13,6 +13,7 @@
 # disclosure restricted by GSA ADP Schedule Contract with
 # IBM Corp.
 # </copyright>
+from __future__ import absolute_import
 import logging
 import logging.handlers
 import os
@@ -22,7 +23,6 @@ import socket
 import platform
 import threading
 import traceback
-import mqlight
 
 ENTRY_IND = '>-----------------------------------------------------------'
 EXIT_IND = '<-----------------------------------------------------------'

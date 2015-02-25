@@ -13,8 +13,9 @@
 # disclosure restricted by GSA ADP Schedule Contract with
 # IBM Corp.
 # </copyright>
-from .mqlightlog import get_logger, NO_CLIENT_ID
-from . import mqlightexceptions as mqlexc
+from __future__ import absolute_import
+from .logging import get_logger, NO_CLIENT_ID
+from .exceptions import MQLightError, SecurityError, NetworkError
 
 LOG = get_logger(__name__)
 
@@ -112,18 +113,18 @@ class _MQLightMessenger(object):
         """
         LOG.data(NO_CLIENT_ID, '_MQLightMessenger.connect called')
         if not self._stopped:
-            raise mqlexc.MQLightError('already connected')
+            raise MQLightError('already connected')
         if 'bad' in service.netloc:
             raise TypeError(
                 'bad service ' + service.scheme + '://' + service.netloc)
         if ssl_trust_certificate == 'BadCertificate':
-            raise mqlexc.SecurityError('Bad certificate')
+            raise SecurityError('Bad certificate')
         elif (ssl_trust_certificate in ('BadVerify', 'BadVerify2') and
               ssl_verify_name):
-            raise mqlexc.SecurityError('Bad verify name')
+            raise SecurityError('Bad verify name')
         else:
             if CONNECT_STATUS != 0:
-                raise mqlexc.NetworkError(
+                raise NetworkError(
                     'connect error: ' + str(CONNECT_STATUS))
             else:
                 self._stopped = False

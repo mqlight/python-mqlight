@@ -21,7 +21,7 @@ import threading
 import pytest
 from mock import Mock
 import mqlight
-import mqlight.mqlightexceptions as mqlexc
+from mqlight.exceptions import MQLightError, InvalidArgumentError
 
 
 class TestSubscribe(object):
@@ -129,7 +129,7 @@ class TestSubscribe(object):
             """started listener"""
             def subscribed(err, topic_pattern, share):
                 """subscribe callback"""
-                assert isinstance(err, mqlexc.MQLightError)
+                assert isinstance(err, MQLightError)
                 assert topic_pattern == '/bad'
                 assert share == 'share'
                 client.stop()
@@ -151,7 +151,7 @@ class TestSubscribe(object):
 
         def stopped(err):
             """stopped listener"""
-            with pytest.raises(mqlexc.MQLightError):
+            with pytest.raises(MQLightError):
                 client.subscribe('/foo')
         client.stop(stopped)
 
@@ -201,7 +201,7 @@ class TestSubscribe(object):
                     if test['valid']:
                         client.subscribe(test['pattern'])
                     else:
-                        with pytest.raises(mqlexc.InvalidArgumentError):
+                        with pytest.raises(InvalidArgumentError):
                             client.subscribe(test['pattern'])
             except Exception as exc:
                 pytest.fail('Unexpected Exception ' + str(exc))
@@ -235,7 +235,7 @@ class TestSubscribe(object):
                     if test['valid']:
                         client.subscribe('/foo', test['share'])
                     else:
-                        with pytest.raises(mqlexc.InvalidArgumentError):
+                        with pytest.raises(InvalidArgumentError):
                             client.subscribe('/foo', test['share'])
             except Exception as exc:
                 pytest.fail('Unexpected Exception ' + str(exc))
@@ -318,7 +318,7 @@ class TestSubscribe(object):
                     if test['valid']:
                         client.subscribe('/foo' + str(i), opts)
                     else:
-                        with pytest.raises(mqlexc.InvalidArgumentError):
+                        with pytest.raises(InvalidArgumentError):
                             client.subscribe('/foo' + str(i), opts)
             except Exception as exc:
                 pytest.fail('Unexpected Exception ' + str(exc))
@@ -365,7 +365,7 @@ class TestSubscribe(object):
                     if test['valid']:
                         client.subscribe('/foo' + str(i), test['opts'])
                     else:
-                        with pytest.raises(mqlexc.InvalidArgumentError):
+                        with pytest.raises(InvalidArgumentError):
                             client.subscribe('/foo' + str(i), test['opts'])
             except Exception as exc:
                 pytest.fail('Unexpected Exception ' + str(exc))

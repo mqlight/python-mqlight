@@ -21,7 +21,7 @@ import threading
 import pytest
 from mock import Mock
 import mqlight
-import mqlight.mqlightexceptions as mqlexc
+from mqlight.exceptions import StoppedError, InvalidArgumentError
 
 
 class TestSend(object):
@@ -93,7 +93,7 @@ class TestSend(object):
                     if test['valid']:
                         client.send(test['topic'], 'message')
                     else:
-                        with pytest.raises(mqlexc.InvalidArgumentError):
+                        with pytest.raises(InvalidArgumentError):
                             client.send(test['topic'], 'message')
             except Exception as exc:
                 pytest.fail('Unexpected Exception ' + str(exc))
@@ -154,7 +154,7 @@ class TestSend(object):
             """started listener"""
             def stopped(err):
                 """stopped listener"""
-                with pytest.raises(mqlexc.StoppedError):
+                with pytest.raises(StoppedError):
                     client.send('topic', 'message')
                 test_is_done.set()
             client.stop(stopped)
@@ -261,7 +261,7 @@ class TestSend(object):
                     if test['valid']:
                         client.send('test', 'message', opts, test['callback'])
                     else:
-                        with pytest.raises(mqlexc.InvalidArgumentError):
+                        with pytest.raises(InvalidArgumentError):
                             client.send('test', 'message', opts,
                                         test['callback'])
             except Exception as exc:

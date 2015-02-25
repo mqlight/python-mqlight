@@ -21,7 +21,7 @@ import pytest
 import threading
 from mock import Mock, patch
 import mqlight
-from mqlight.stubproton import _MQLightMessenger
+from mqlight.stubmqlproton import _MQLightMessenger
 
 
 def side_effect(service, ssl_trust_certificate, ssl_verify_name):
@@ -30,9 +30,9 @@ def side_effect(service, ssl_trust_certificate, ssl_verify_name):
         raise TypeError('bad service ' + service.netloc)
 
 
-@patch('mqlight.mqlightproton._MQLightMessenger.connect',
+@patch('mqlight.mqlproton._MQLightMessenger.connect',
        Mock(side_effect=side_effect))
-@patch('mqlight.mqlightproton._MQLightMessenger.get_remote_idle_timeout',
+@patch('mqlight.mqlproton._MQLightMessenger.get_remote_idle_timeout',
        Mock(return_value=0))
 class TestStart(object):
 

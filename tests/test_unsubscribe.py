@@ -21,12 +21,13 @@ import pytest
 import threading
 from mock import Mock, patch
 import mqlight
-import mqlight.mqlightexceptions as mqlexc
+from mqlight.exceptions import StoppedError, RangeError,InvalidArgumentError, \
+    UnsubscribedError
 
 
-@patch('mqlight.mqlightproton._MQLightMessenger.connect',
+@patch('mqlight.mqlproton._MQLightMessenger.connect',
        Mock())
-@patch('mqlight.mqlightproton._MQLightMessenger.get_remote_idle_timeout',
+@patch('mqlight.mqlproton._MQLightMessenger.get_remote_idle_timeout',
        Mock(return_value=0))
 class TestUnsubscribe(object):
 
@@ -156,7 +157,7 @@ class TestUnsubscribe(object):
 
         def stopped(err):
             """stopped listener"""
-            with pytest.raises(mqlexc.StoppedError):
+            with pytest.raises(StoppedError):
                 client.unsubscribe('/foo')
             test_is_done.set()
         client.stop(stopped)
@@ -177,7 +178,7 @@ class TestUnsubscribe(object):
                 '/bar',
                 on_subscribed=lambda _x, _y, _z: subscribe_event.set())
             assert subscribe_event.wait(2.0)
-            with pytest.raises(mqlexc.UnsubscribedError):
+            with pytest.raises(UnsubscribedError):
                 client.unsubscribe('/foo')
             client.stop()
             test_is_done.set()
@@ -238,7 +239,7 @@ class TestUnsubscribe(object):
                         client.subscribe(test['pattern'])
                         client.unsubscribe(test['pattern'])
                     else:
-                        with pytest.raises(mqlexc.MQLightError):
+                        with pytest.raises(MQLightError):
                             client.unsubscribe(test['pattern'])
             except:
                 pytest.fail('Unexpected Exception')
@@ -275,7 +276,7 @@ class TestUnsubscribe(object):
                         client.subscribe('/foo', test['share'])
                         client.unsubscribe('/foo', test['share'])
                     else:
-                        with pytest.raises(mqlexc.InvalidArgumentError):
+                        with pytest.raises(InvalidArgumentError):
                             client.unsubscribe('/foo', test['share'])
             except:
                 pytest.fail('Unexpected Exception')
@@ -374,7 +375,7 @@ class TestUnsubscribe(object):
                         client.subscribe('testpattern')
                         client.unsubscribe('testpattern', opts)
                     else:
-                        with pytest.raises(mqlexc.RangeError):
+                        with pytest.raises(RangeError):
                             client.unsubscribe('testpattern', opts)
             except:
                 pytest.fail('Unexpected Exception')

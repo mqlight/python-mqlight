@@ -25,10 +25,10 @@ import re
 import inspect
 import os
 import mqlight
-import mqlight.mqlightexceptions as mqlexc
+from mqlight.exceptions import SecurityError, InvalidArgumentError
 
 
-@patch('mqlight.mqlightproton._MQLightMessenger.connect',
+@patch('mqlight.mqlproton._MQLightMessenger.connect',
        Mock(return_value=None))
 class TestCreateClient(object):
 
@@ -256,8 +256,8 @@ class TestCreateClient(object):
                 mqlight.Client(service, client_id, security_options)
             err_type = type(err.value)
             allowed = err_type in (TypeError,
-                                   mqlexc.SecurityError,
-                                   mqlexc.InvalidArgumentError)
+                                   SecurityError,
+                                   InvalidArgumentError)
             assert allowed, 'errtype is unexpectedly ' + str(err_type)
         if os.path.exists('dirCertificate'):
             os.rmdir('dirCertificate')
