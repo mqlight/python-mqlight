@@ -17,7 +17,7 @@ from __future__ import division, absolute_import
 import os
 from . import cproton
 from .exceptions import MQLightError, SecurityError, ReplacedError, \
-    NetworkError, InvalidArgumentError
+    NetworkError, InvalidArgumentError, NotPermittedError
 from .logging import get_logger, NO_CLIENT_ID
 try:
     from urlparse import urlunparse
@@ -334,10 +334,14 @@ class _MQLightMessenger(object):
         """
         if ' sasl ' in text or 'SSL ' in text:
             raise SecurityError(text)
-        elif '_Takeover' in text:
+
+        if '_Takeover' in text:
             raise ReplacedError(text)
-        else:
-            raise NetworkError(text)
+
+        if '_InvalidSourceTimeout' in text:
+            raise NotPermittedError(text)
+
+        raise NetworkError(text)
 
     def connect(self, service, ssl_trust_certificate, ssl_verify_name):
         """

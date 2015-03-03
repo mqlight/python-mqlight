@@ -43,8 +43,8 @@ except ImportError:
     from urllib.parse import urlparse
     from urllib.parse import quote
 from .exceptions import MQLightError, InvalidArgumentError, RangeError, \
-    NetworkError, ReplacedError, LocalReplacedError, SecurityError, \
-    StoppedError, SubscribedError, UnsubscribedError
+    NetworkError, NotPermittedError, ReplacedError, LocalReplacedError, \
+    SecurityError, StoppedError, SubscribedError, UnsubscribedError
 from .logging import get_logger, NO_CLIENT_ID
 
 CMD = ' '.join(sys.argv)
@@ -194,6 +194,7 @@ def _should_reconnect(error):
     result = type(error) not in (
         TypeError,
         InvalidArgumentError,
+        NotPermittedError,
         ReplacedError,
         StoppedError,
         SubscribedError,

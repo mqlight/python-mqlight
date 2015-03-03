@@ -54,6 +54,16 @@ class NetworkError(MQLightError):
     pass
 
 
+class NotPermittedError(MQLightError):
+    """
+    This is a subtype of MQLightError defined by the MQ Light client. It is
+    considered an operational error. NotPermittedError is raised to indicate
+    that a requested operation has been rejected because the remote end does
+    not permit it.
+    """
+    pass
+
+
 class ReplacedError(MQLightError):
 
     """
