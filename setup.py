@@ -78,6 +78,9 @@ class PyTest(TestCommand):
         # self.pytest_args.insert(0, 'tests/test_unsubscribe.py')
         self.pytest_args.insert(0, '--junitxml=junit.xml')
         self.pytest_args.insert(0, '--timeout=10')
+        self.pytest_args.insert(0, '--cov-report=term')
+        self.pytest_args.insert(0, '--cov-report=html')
+        self.pytest_args.insert(0, '--cov=mqlight')
         errno = pytest.main(self.pytest_args)
         errno += pytest.main(['--pep8', '-m pep8', 'mqlight/'])
         sys.exit(errno)
@@ -132,6 +135,7 @@ setup(
     ],
     test_suite='tests',
     tests_require=[
+        'pytest_cov',
         'pytest_pep8',
         'pytest_timeout',
         'pytest',
