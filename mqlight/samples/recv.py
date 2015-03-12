@@ -110,12 +110,23 @@ delay = args.delay
 share = args.share_name
 verbose = args.verbose
 
+
+def close(rc, err=None):
+    if err:
+        print('*** error ***', file=sys.stderr)
+        print(err, file=sys.stderr)
+    if client:
+        client.stop()
+    print('Exiting.')
+    exit(rc)
+
+client = None
 security_options = {}
 if args.trust_certificate is not None:
     security_options['ssl_trust_certificate'] = args.trust_certificate
     if args.service != SERVICE:
         if not service.startswith('amqps'):
-            error('The service URL must start with "amqps://" when using a '
+            close(1, 'The service URL must start with "amqps://" when using a '
                   'trust certificate.')
     else:
         service = 'amqps://localhost'
@@ -148,7 +159,7 @@ def subscribed(err, pattern, share):
     Subscribe callback
     """
     if err is not None:
-        error('problem with subscribe request {0}'.format(err))
+        close('problem with subscribe request {0}'.format(err), 1)
     if pattern:
         if share:
             print('Subscribed to share: {0}, pattern: {1}'.format(
@@ -189,22 +200,9 @@ def message(message_type, data, delivery):
 
 def state_changed(state, msg):
     if state == mqlight.ERROR:
-        error(msg)
+        close(1, msg)
 
 
-def error(err):
-    """
-    Error callback
-    """
-    print('*** error ***', file=sys.stderr)
-    if err:
-        print(err, file=sys.stderr)
-    if client:
-        client.stop()
-    print('Exiting.')
-    exit(1)
-
-client = None
 try:
     client = mqlight.Client(
         service=service,
@@ -213,4 +211,11 @@ try:
         on_started=subscribe,
         on_state_changed=state_changed)
 except Exception as exc:
-    error(exc)
+    close(1, exc)
+
+while True:
+    try:
+        time.sleep(0.5)
+    except KeyboardInterrupt:
+        close(0)
+        break

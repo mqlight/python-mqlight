@@ -29,8 +29,8 @@ import os.path
 import re
 import sys
 import codecs
-import socket
 import traceback
+import time
 from json import loads
 from random import random
 from pkg_resources import get_distribution, DistributionNotFound
@@ -44,16 +44,18 @@ except ImportError:
     from urllib.parse import quote
 from .exceptions import MQLightError, InvalidArgumentError, RangeError, \
     NetworkError, NotPermittedError, ReplacedError, LocalReplacedError, \
-    SecurityError, StoppedError, SubscribedError, UnsubscribedError
+    StoppedError, SubscribedError, UnsubscribedError
 from .logging import get_logger, NO_CLIENT_ID
 
 CMD = ' '.join(sys.argv)
 if 'setup.py test' in CMD or 'unittest' in CMD:
-    from .stubmqlproton import _MQLightMessenger, _MQLightMessage
+    from .stubmqlproton import _MQLightMessenger, _MQLightMessage, \
+        _MQLightSocket, QOS_AT_MOST_ONCE, QOS_AT_LEAST_ONCE
     # The connection retry interval in seconds
     CONNECT_RETRY_INTERVAL = 1
 else:
-    from .mqlproton import _MQLightMessenger, _MQLightMessage
+    from .mqlproton import _MQLightMessenger, _MQLightMessage, \
+        _MQLightSocket, QOS_AT_MOST_ONCE, QOS_AT_LEAST_ONCE
     # The connection retry interval in seconds
     CONNECT_RETRY_INTERVAL = 10
 
@@ -80,9 +82,6 @@ ERROR = 'error'
 MESSAGE = 'message'
 MALFORMED = 'malformed'
 DRAIN = 'drain'
-
-QOS_AT_MOST_ONCE = 0
-QOS_AT_LEAST_ONCE = 1
 
 STATES = (
     STARTED,
@@ -253,7 +252,7 @@ def _get_http_service_function(http, http_url):
                     'of {2}'.format(http_url.scheme, http, res.status))
                 LOG.error('_http_service_function', NO_CLIENT_ID, err)
                 callback(err, None)
-        except (httplib.HTTPException, socket.error) as exc:
+        except httplib.HTTPException as exc:
             err = NetworkError(
                 '{0} request to {1} failed: {2}'.format(
                     http_url.scheme, http, exc))
@@ -419,12 +418,6 @@ def _generate_service_list(service, security_options):
                 'Only the amqp or amqps protocol are supported.'.format(
                     service))
             LOG.error('_generate_service_list', NO_CLIENT_ID, error)
-            raise error
-
-        # Temporary disable amqps
-        if protocol == 'amqps':
-            error = NotImplementedError('SSL is currently not implemented')
-            LOG.error('_genere_service_list', NO_CLIENT_ID, error)
             raise error
 
         # Check we have a hostname
@@ -638,6 +631,10 @@ class Client(object):
         self._security_options = s_o
 
         self._messenger = _MQLightMessenger(self._id)
+        self._sock = None
+
+        self._queued_chunks = []
+        self._push_timeout = None
 
         # Set the initial state to starting
         self._state = STARTING
@@ -715,6 +712,84 @@ class Client(object):
                     on_started(err)
             self._perform_connect(connect_callback, service, True)
         LOG.exit('Client.__init__', self._id, None)
+
+    def _on_read(self, chunk):
+        LOG.entry_often('Client._on_read', self._id)
+        LOG.parms(self._id, 'chunk:', chunk)
+        # Queue up the chunk
+        self._queued_chunks.append(chunk)
+        # Small chunks usually indicate something needing immediate
+        # attention so push them immediately, whereas larger chunks may
+        # simply be part of a larger message.
+        if len(chunk) < 1024:
+            self._push_chunks()
+        else:
+            # Allow more time for chunks to arrive before we process them.
+            if self._push_timeout is None:
+                self._push_timeout = threading.Timer(
+                    0.5,
+                    self._push_chunks)
+                self._push_timeout.start()
+        LOG.exit_often('Client._on_read', self._id, None)
+
+    def _push_chunks(self):
+        LOG.entry('Client._push_chunks', self._id)
+        pushed = 0
+
+        # Allow further calls to be scheduled.
+        if self._push_timeout:
+            # If we previously set a timeout to process the chunks, clear
+            # it.
+            self._push_timeout.cancel()
+
+        self._push_timeout = None
+
+        # Build up a merged buffer of all the chunks
+        if self._queued_chunks:
+            chunk = b''.join(self._queued_chunks)
+            self._queued_chunks = []
+
+            # Keep pushing data into proton until the whole chunk is
+            # pushed.
+            while chunk:
+                # Attempt to push the whole chunk into proton.
+                written = self._messenger.push(chunk)
+
+                if written < len(chunk):
+                    if written <= 0:
+                        # If we failed to push anything in, then quit
+                        # pushing now and schedule work to happen again
+                        # shortly.
+                        self._queued_chunks.append(chunk)
+                        self._messenger.pop(self._sock, True)
+                        self._push_chunks()
+                        LOG.exit('Client._push_chunks', self._id, pushed)
+                        return pushed
+                    else:
+                        # A push into proton may mean data also needs to be
+                        # written.
+                        pushed += written
+                        self._messenger.pop(self._sock, False)
+
+                    # Remove the pushed part of the chunk.
+                    chunk = chunk.slice(written)
+                else:
+                    # This chunk has been fully dealt with.
+                    pushed += written
+                    break
+
+            # A push into proton may mean data also needs to be written.
+            # Force a messenger tick.
+            self._messenger.pop(self._sock, True)
+
+            # If data has been read, messages may have arrived, so perform
+            # a check.
+            if self._subscriptions:
+                if self.state == STARTED:
+                    check_thread = threading.Thread(
+                        target=self._check_for_messages)
+                    check_thread.start()
+        LOG.exit('Client._push_chunks', self._id, None)
 
     def _perform_connect(self, on_started, service, new_client):
         """
@@ -926,17 +1001,17 @@ class Client(object):
                 if sub['noop']:
                     # no-op so just trigger the callback without actually
                     # subscribing
-                    if sub['callback']:
-                        sub['callback'](
+                    if sub['on_subscribed']:
+                        sub['on_subscribed'](
                             err,
                             sub['topic_pattern'],
                             sub['original_share_value'])
                 else:
                     self.subscribe(
-                        sub.topic_pattern,
-                        sub.share,
-                        sub.options,
-                        sub.callback)
+                        sub['topic_pattern'],
+                        sub['share'],
+                        sub['options'],
+                        sub['on_subscribed'])
             LOG.data(
                 self._id,
                 'client._queued_unsubscribes:',
@@ -946,17 +1021,17 @@ class Client(object):
                 if sub['noop']:
                     # no-op so just trigger the callback without actually
                     # unsubscribing
-                    if sub['callback']:
-                        sub['callback'](
+                    if sub['on_unsubscribed']:
+                        sub['on_unsubscribed'](
                             None,
                             sub['topic_pattern'],
                             sub['share'])
                 else:
                     self.unsubscribe(
-                        sub.topic_pattern,
-                        sub.share,
-                        sub.options,
-                        sub.callback)
+                        sub['topic_pattern'],
+                        sub['share'],
+                        sub['options'],
+                        sub['on_unsubscribed'])
             LOG.data(
                 self._id,
                 'client._queued_sends:',
@@ -964,7 +1039,11 @@ class Client(object):
             while self._queued_sends and self.state == STARTED:
                 remaining = len(self._queued_sends)
                 msg = self._queued_sends.pop(0)
-                self.send(msg.topic, msg.data, msg.options, msg.callback)
+                self.send(
+                    msg['topic'],
+                    msg['data'],
+                    msg['options'],
+                    msg['on_sent'])
                 if len(self._queued_sends) >= remaining:
                     # Calling client.send can cause messages to be added back
                     # into _queued_sends, if the network connection is broken.
@@ -983,9 +1062,8 @@ class Client(object):
         if self.get_state() != STARTED or not self._subscriptions:
             LOG.exit_often('Client._check_for_messages', self._id, None)
             return
-        requeue = True
         try:
-            messages = self._messenger.receive(50)
+            messages = self._messenger.receive(self._sock)
             if messages:
                 LOG.debug(
                     self._id,
@@ -1004,9 +1082,6 @@ class Client(object):
         except Exception as exc:
             LOG.error('Client._check_for_messages', self._id, exc)
 
-            if not _should_reconnect(exc):
-                requeue = False
-
             def next_tick(exc):
                 LOG.error('Client._check_for_messages', self._id, exc)
                 if self._on_state_changed:
@@ -1014,10 +1089,6 @@ class Client(object):
                 if _should_reconnect(exc):
                     self._reconnect()
             timer = threading.Timer(0.2, next_tick, [exc])
-            timer.start()
-
-        if self.get_state() == STARTED and requeue:
-            timer = threading.Timer(0.2, self._check_for_messages)
             timer.start()
 
         LOG.exit_often('Client._check_for_messages', self._id, None)
@@ -1111,7 +1182,8 @@ class Client(object):
                 if available / sub['confirmed'] <= 1.25 or to_confirm:
                     self._messenger.flow(
                         self._service + '/' + msg.link_address,
-                        sub['confirmed'])
+                        sub['confirmed'],
+                        self._sock)
                     sub['confirmed'] = 0
             else:
                 timer = threading.Timer(0.1, _still_settling, [sub, msg])
@@ -1152,7 +1224,7 @@ class Client(object):
                         err)
                     raise err
                 confirmation['delivery_confirmed'] = True
-                self._messenger.settle(msg)
+                self._messenger.settle(msg, self._sock)
                 _still_settling(subscription, msg)
             LOG.exit(
                 'Client._process_message._confirm',
@@ -1226,7 +1298,7 @@ class Client(object):
             if qos == QOS_AT_MOST_ONCE:
                 self._messenger.accept(msg)
             if qos == QOS_AT_MOST_ONCE or auto_confirm:
-                self._messenger.settle(msg)
+                self._messenger.settle(msg, self._sock)
                 subscription['unconfirmed'] -= 1
                 subscription['confirmed'] += 1
                 LOG.data(
@@ -1248,7 +1320,8 @@ class Client(object):
                         'confirmed'] > 0):
                     self._messenger.flow(
                         self._service + '/' + msg.link_address,
-                        subscription['confirmed'])
+                        subscription['confirmed'],
+                        self._sock)
                     subscription['confirmed'] = 0
                     msg = None
         LOG.exit_often('Client._process_message', self._id, None)
@@ -1307,6 +1380,9 @@ class Client(object):
                     self._id)
                 if client._heartbeat_timeout:
                     client._heartbeat_timeout.cancel()
+
+                if self._sock:
+                    self._sock.close()
 
                 # Clear all queued sends as we are disconnecting
                 while self._queued_sends:
@@ -1390,7 +1466,7 @@ class Client(object):
         # If messenger available then request it to stop
         # (otherwise it must have already been stopped)
         if self._messenger:
-            stopped = self._messenger.stop()
+            stopped = self._messenger.stop(self._sock)
 
         # If stopped then perform the required stop processing
         if stopped:
@@ -1457,7 +1533,7 @@ class Client(object):
                     log_url = re.sub(r':[^:]+@', ':********@', service)
                 else:
                     log_url = service
-                LOG.data(self._id, 'attempting to connect to: ', log_url)
+                LOG.data(self._id, 'attempting to connect to:', log_url)
 
                 connect_url = urlparse(service)
                 # Remove any path elements from the URL
@@ -1467,24 +1543,42 @@ class Client(object):
                 else:
                     connect_service = service
 
+                address = (connect_url.hostname, connect_url.port)
+                ssl_options = {}
                 s_o = self._security_options
                 if s_o.ssl_trust_certificate is not None:
-                    ssl_trust_certificate = s_o.ssl_trust_certificate
+                    ssl_options['cert'] = s_o.ssl_trust_certificate
                 else:
-                    ssl_trust_certificate = None
+                    ssl_options['cert'] = None
                 if s_o.ssl_verify_name is not None:
-                    ssl_verify_name = s_o.ssl_verify_name
+                    ssl_options['verify'] = s_o.ssl_verify_name
                 else:
-                    ssl_verify_name = None
-
+                    ssl_options['verify'] = True
                 try:
-                    self._messenger.connect(
-                        urlparse(connect_service),
-                        ssl_trust_certificate,
-                        ssl_verify_name)
-                    LOG.data(self._id, 'successfully connected to:', log_url)
-                    self._service = self._service_list[i]
-                    connected = True
+                    self._sock = _MQLightSocket(
+                        address,
+                        ssl_options,
+                        self._on_read)
+                    self._messenger.connect(urlparse(connect_service))
+
+                    # Wait for start
+                    while not self._messenger.started:
+                        if self.state not in (RETRYING, STARTING):
+                            # Don't keep waiting if we're no longer in a
+                            # starting state
+                            LOG.data(self._id, 'client no longer starting')
+                            break
+                        time.sleep(0.05)
+                    else:
+                        connected = True
+                        LOG.data(
+                            self._id,
+                            'successfully connected to:',
+                            log_url)
+                        self._service = self._service_list[i]
+
+                        # Pass any data to proton.
+                        self._messenger.pop(self._sock, False)
                     break
                 except Exception as exc:
                     error = exc
@@ -1546,10 +1640,10 @@ class Client(object):
             remote_idle_timeout = self._messenger.get_remote_idle_timeout(
                 self._service)
             if remote_idle_timeout > 0:
-                heartbeat_interval = remote_idle_timeout / 2
+                heartbeat_interval = remote_idle_timeout / 2000
             else:
-                heartbeat_interval = remote_idle_timeout
-            LOG.data(self._id, 'heartbeat_interval: ', heartbeat_interval)
+                heartbeat_interval = remote_idle_timeout / 1000
+            LOG.data(self._id, 'heartbeat_interval:', heartbeat_interval)
             if heartbeat_interval > 0:
                 def perform_heartbeat(heartbeat_interval):
                     """
@@ -1560,7 +1654,7 @@ class Client(object):
                         'Client._connect_to_service.perform_heartbeat',
                         self._id)
                     if self._messenger:
-                        self._messenger.work(0)
+                        self._messenger.heartbeat(self._sock)
                         self._heartbeat_timeout = threading.Timer(
                             heartbeat_interval,
                             perform_heartbeat,
@@ -1840,7 +1934,7 @@ class Client(object):
             in_outstanding_sends = True
 
             self._messenger.put(msg, qos)
-            self._messenger.send()
+            self._messenger.send(self._sock)
 
             if len(self._outstanding_sends) == 1:
                 def send_outbound_msg():
@@ -1857,7 +1951,7 @@ class Client(object):
                                 self.get_service())
                             while tries > 0 and p_o:
                                 tries -= 1
-                                self._messenger.send()
+                                self._messenger.send(self._sock)
                                 p_o = self._messenger.pending_outbound(
                                     self.get_service())
 
@@ -1883,7 +1977,8 @@ class Client(object):
                                 else:
                                     if status in ('ACCEPTED', 'SETTLED'):
                                         self._messenger.settle(
-                                            in_flight['msg'])
+                                            in_flight['msg'],
+                                            self._sock)
                                         complete = True
                                     elif status == 'REJECTED':
                                         complete = True
@@ -1909,7 +2004,7 @@ class Client(object):
                                             'send failed - message was '
                                             'aborted')
                                     elif status == 'PENDING':
-                                        self._messenger.send()
+                                        self._messenger.send(self._sock)
                                 LOG.data(self._id, 'complete:', complete)
                                 if complete:
                                     # Remove send operation from list of
@@ -2258,29 +2353,43 @@ class Client(object):
                     'client is already subscribed to this address')
                 LOG.error('Client.subscribe', self._id, err)
                 raise err
-        if err is None:
-            try:
-                self._messenger.subscribe(address, qos, ttl, credit)
-            except Exception as exc:
-                LOG.error('Client.subscribe', self._id, exc)
-                err = MQLightError(exc)
 
-        if on_subscribed:
-            def on_subscribed_callback():
-                on_subscribed(err, topic_pattern, original_share_value)
-            callback_thread = threading.Thread(target=on_subscribed_callback)
-            callback_thread.daemon = True
-            callback_thread.start()
+        def finished_subscribing(err, callback):
+            LOG.entry('Client.subscribe.finished_subscribing', self._id)
+            LOG.parms(self._id, 'err:', err)
+            LOG.parms(self._id, 'callback:', callback)
 
-        if err:
-            LOG.error('Client.subscribe', self._id, err)
-            if self._on_state_changed:
-                self._on_state_changed(ERROR, err)
+            if callback:
+                callback_thread = threading.Thread(
+                    target=callback,
+                    args=(err, topic_pattern, original_share_value))
+                callback_thread.daemon = True
+                callback_thread.start()
 
-            if _should_reconnect(err):
-                LOG.data(self._id, 'queued subscription and calling reconnect')
-                self._queued_subscriptions.append({
-                    'noop': False,  # FIXME: implement noop behaviour
+            if err:
+                LOG.error('Client.subscribe', self._id, err)
+                if self._on_state_changed:
+                    self._on_state_changed(ERROR, err)
+
+                if _should_reconnect(err):
+                    LOG.data(
+                        self._id,
+                        'queued subscription and calling reconnect')
+                    self._queued_subscriptions.append({
+                        'noop': False,
+                        'address': subscription_address,
+                        'qos': qos,
+                        'auto_confirm': auto_confirm,
+                        'topic_pattern': topic_pattern,
+                        'share': original_share_value,
+                        'options': options,
+                        'on_subscribed': on_subscribed,
+                        'on_message': on_message
+                    })
+                    self._reconnect()
+            else:
+                # if no errors, add this to the stored list of subscriptions
+                self._subscriptions.append({
                     'address': subscription_address,
                     'qos': qos,
                     'auto_confirm': auto_confirm,
@@ -2288,34 +2397,51 @@ class Client(object):
                     'share': original_share_value,
                     'options': options,
                     'on_subscribed': on_subscribed,
-                    'on_message': on_message
+                    'on_message': on_message,
+                    'credit': credit,
+                    'unconfirmed': 0,
+                    'confirmed': 0
                 })
-                self._reconnect()
+            LOG.exit('Client.subscribe.finished_subscribing', self._id, None)
+
+        if err is None:
+            try:
+                self._messenger.subscribe(
+                    address,
+                    qos,
+                    ttl,
+                    credit,
+                    self._sock)
+
+                def still_subscribing(on_subscribed):
+                    LOG.entry('Client.subscribe.still_subscribing', self._id)
+                    try:
+                        while not self._messenger.subscribed(address):
+                            time.sleep(0.05)
+                        if credit > 0:
+                            self._messenger.flow(address, credit, self._sock)
+                        finished_subscribing(None, on_subscribed)
+                    except Exception as exc:
+                        LOG.error(
+                            'Client.subscribe.still_subscribing',
+                            self._id,
+                            exc)
+                        finished_subscribing(exc, on_subscribed)
+                    LOG.exit(
+                        'Client.subscribe.still_subscribing',
+                        self._id,
+                        None)
+
+                wait_for_subscribe_thread = threading.Thread(
+                    target=still_subscribing,
+                    args=(on_subscribed,))
+                wait_for_subscribe_thread.start()
+            except Exception as exc:
+                LOG.error('Client.subscribe', self._id, exc)
+                err = MQLightError(exc)
+                finished_subscribing(err, on_subscribed)
         else:
-            # if no errors, add this to the stored list of subscriptions
-            is_first_sub = not self._subscriptions
-            LOG.data(self._id, 'is_first_sub:', is_first_sub)
-
-            self._subscriptions.append({
-                'address': subscription_address,
-                'qos': qos,
-                'auto_confirm': auto_confirm,
-                'topic_pattern': topic_pattern,
-                'share': original_share_value,
-                'options': options,
-                'on_subscribed': on_subscribed,
-                'on_message': on_message,
-                'credit': credit,
-                'unconfirmed': 0,
-                'confirmed': 0
-            })
-
-            # If this is the first subscription to be added, schedule a request
-            # to start the polling loop to check for messages arriving
-            if is_first_sub:
-                timer2 = threading.Timer(0, self._check_for_messages)
-                timer2.start()
-
+            finished_subscribing(err, on_subscribed)
         LOG.exit('Client.subscribe', self._id, self)
         return self
 
@@ -2427,7 +2553,8 @@ class Client(object):
                     break
             else:
                 err = UnsubscribedError(
-                    'client is not subscribed to this address:' + address)
+                    'client is not subscribed to this address: {0}'.format(
+                        address))
                 LOG.error('Client.unsubscribe', self._id, err)
                 raise err
 
@@ -2474,39 +2601,68 @@ class Client(object):
             LOG.exit('Client.unsubscribe', self._id, self)
             return self
 
-        # unsubscribe using the specified topic pattern and share options
-        error = None
-        try:
-            self._messenger.unsubscribe(address, ttl)
+        def finished_unsubscribing(err, callback):
+            LOG.entry(
+                'Client.unsubscribe.finished_unsubscribing',
+                self._id)
+            LOG.parms(self._id, 'err:', err)
+            LOG.parms(self._id, 'callback:', callback)
 
-            if on_unsubscribed:
-                def on_unsubscribed_callback():
-                    LOG.entry(
-                        'Client.unsubscribe.on_unsubscribed_callback',
-                        self._id)
-                    on_unsubscribed(None, topic_pattern, original_share_value)
-                    LOG.exit(
-                        'Client.unsubscribe.on_unsubscribed_callback',
-                        self._id,
-                        None)
+            if callback:
                 callback_thread = threading.Thread(
-                    target=on_unsubscribed_callback)
+                    target=callback,
+                    args=(err, topic_pattern, original_share_value))
                 callback_thread.daemon = True
                 callback_thread.start()
 
-            # if no errors, remove this from the stored list of subscriptions
-            for sub in self._subscriptions:
-                if sub['address'] == subscription_address and sub[
-                        'share'] == original_share_value:
-                    self._subscriptions.remove(sub)
-                    break
+            if err:
+                LOG.error('Client.subscribe', self._id, err)
+                if self._on_state_changed:
+                    self._on_state_changed(ERROR, err)
+                if _should_reconnect(exc):
+                    queue_unsubscribe()
+                    self._reconnect()
+            else:
+                # if no errors, remove this from the stored list of
+                # subscriptions
+                for sub in self._subscriptions:
+                    if sub['address'] == subscription_address and sub[
+                            'share'] == original_share_value:
+                        self._subscriptions.remove(sub)
+                        break
+            LOG.exit(
+                'Client.unsubscribe.finished_unsubscribing',
+                self._id,
+                None)
 
+        # unsubscribe using the specified topic pattern and share options
+        try:
+            self._messenger.unsubscribe(address, ttl, self._sock)
+
+            def still_unsubscribing(callback):
+                LOG.entry('Client.unsubscribe.still_unsubscribing', self._id)
+                try:
+                    while not self._messenger.unsubscribed(address):
+                        time.sleep(0.05)
+                    finished_unsubscribing(None, callback)
+                except Exception as exc:
+                    LOG.error(
+                        'Client.unsubscribe.still_unsubscribing',
+                        self._id,
+                        exc)
+                    finished_unsubscribing(exc, callback)
+                LOG.exit(
+                    'Client.unsubscribe.still_unsubscribing',
+                    self._id,
+                    None)
+
+            wait_for_unsubscribe_thread = threading.Thread(
+                target=still_unsubscribing,
+                args=(on_unsubscribed,))
+            wait_for_unsubscribe_thread.start()
         except Exception as exc:
             LOG.error('Client.unsubscribe', self._id, exc)
-            if self._on_state_changed:
-                self._on_state_changed(ERROR, exc)
-            if _should_reconnect(exc):
-                queue_unsubscribe()
-                self._reconnect()
+            finished_unsubscribing(exc, on_unsubscribed)
+
         LOG.exit('Client.unsubscribe', self._id, self)
         return self

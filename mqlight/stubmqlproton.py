@@ -21,6 +21,8 @@ LOG = get_logger(__name__)
 
 SEND_STATUS = 'SETTLED'
 CONNECT_STATUS = 0
+QOS_AT_MOST_ONCE = 0
+QOS_AT_LEAST_ONCE = 1
 
 
 class _MQLightMessage(object):
@@ -107,7 +109,7 @@ class _MQLightMessenger(object):
         self.work_callback = None
         self.last_address = None
 
-    def connect(self, service, ssl_trust_certificate, ssl_verify_name):
+    def connect(self, service):
         """
         Connects to the specified service
         """
@@ -117,11 +119,6 @@ class _MQLightMessenger(object):
         if 'bad' in service.netloc:
             raise TypeError(
                 'bad service ' + service.scheme + '://' + service.netloc)
-        if ssl_trust_certificate == 'BadCertificate':
-            raise SecurityError('Bad certificate')
-        elif (ssl_trust_certificate in ('BadVerify', 'BadVerify2') and
-              ssl_verify_name):
-            raise SecurityError('Bad verify name')
         else:
             if CONNECT_STATUS != 0:
                 raise NetworkError(
@@ -130,7 +127,7 @@ class _MQLightMessenger(object):
                 self._stopped = False
                 LOG.data(NO_CLIENT_ID, 'successfully connected')
 
-    def stop(self):
+    def stop(self, sock):
         """
         Calls stop() on the proton Messenger
         """
@@ -154,6 +151,12 @@ class _MQLightMessenger(object):
         """
         self._stopped = state
     stopped = property(_is_stopped, _set_stopped)
+
+    def started(self):
+        """
+        Return True
+        """
+        return True
 
     def has_sent(self):
         """
@@ -236,7 +239,7 @@ class _MQLightMessenger(object):
             self.work_callback()
         return 0
 
-    def flow(self, address, credit):
+    def flow(self, address, credit, sock):
         """
         Process messages based on the number of credit available
         """
@@ -249,23 +252,26 @@ class _MQLightMessenger(object):
         LOG.data(NO_CLIENT_ID, '_MQLightMessenger.put called')
         return True
 
-    def send(self):
+    def send(self, sock):
         """
         Sends the messages on the outgoing queue
         """
         LOG.data(NO_CLIENT_ID, '_MQLightMessenger.send called', )
 
-    def receive(self, timeout):
+    def receive(self, sock):
         """
         Retrieves messages from the incoming queue
         """
         return []
 
-    def settle(self, message):
+    def settle(self, message, sock):
         """
         Settles a message
         """
         LOG.data(NO_CLIENT_ID, '_MQLightMessenger.settle called')
+        return True
+
+    def settled(self, message):
         return True
 
     def accept(self, message):
@@ -284,7 +290,7 @@ class _MQLightMessenger(object):
             SEND_STATUS)
         return SEND_STATUS
 
-    def subscribe(self, address, qos, ttl, credit):
+    def subscribe(self, address, qos, ttl, credit, sock):
         """
         Subscribes to a topic
         """
@@ -293,12 +299,69 @@ class _MQLightMessenger(object):
         self.last_address = address
         return True
 
-    def unsubscribe(self, address, ttl):
+    def subscribed(self, address):
+        return True
+
+    def unsubscribe(self, address, ttl, sock):
         """
         Unsubscribes from a topic
         """
         return True
 
+    def unsubscribed(self, address):
+        return True
+
     def pending_outbound(self, address):
         LOG.data(NO_CLIENT_ID, '_MQLightMessenger.pending_outbound called')
         return False
+
+    def pop(self, sock, force):
+        LOG.entry('_MQLightMessenger.pop', NO_CLIENT_ID)
+        LOG.exit('_MQLightMessenger.pop', NO_CLIENT_ID, 0)
+        return 0
+
+    def push(self, chunk):
+        LOG.entry('_MQLightMessenger.push', NO_CLIENT_ID)
+        LOG.exit('_MQLightMessenger.push', NO_CLIENT_ID, None)
+
+    def _write(self, sock, force):
+        LOG.entry('_MQLightMessenger._write', NO_CLIENT_ID)
+        LOG.exit('_MQLightMessenger._write', NO_CLIENT_ID, None)
+
+    def heartbeat(self, sock):
+        LOG.entry('_MQLightMessenger.heartbeat', NO_CLIENT_ID)
+        LOG.exit('_MQLightMessenger.heartbeat', NO_CLIENT_ID, None)
+
+
+class _MQLightSocket(object):
+
+    def __init__(self, address, ssl_options, on_read):
+        LOG.entry('_MQLightSocket.__init__', NO_CLIENT_ID)
+        err = None
+        if 'bad' in address[0]:
+            err = TypeError('ECONNREFUSED bad service ' + address[0])
+        if ssl_options['cert'] == 'BadCertificate':
+            err = MQLightError('Bad Certificate')
+        elif ssl_options['cert'] == 'BadVerify2' and ssl_options['verify']:
+            err = MQLightError('Bad verify name')
+        elif CONNECT_STATUS != 0:
+            err = MQLightError('connect error: ' + CONNECT_STATUS)
+
+        if err:
+            LOG.data(NO_CLIENT_ID, 'connection error', err)
+            raise err
+        else:
+            LOG.data(NO_CLIENT_ID, 'connection successful')
+        LOG.exit('_MQLightSocket.__init__', NO_CLIENT_ID, None)
+
+    def loop(self):
+        LOG.entry('_MQLightSocket.loop', NO_CLIENT_ID)
+        LOG.exit('_MQLightSocket.loop', NO_CLIENT_ID, None)
+
+    def send(self, msg):
+        LOG.entry('_MQLightSocket.send', NO_CLIENT_ID)
+        LOG.exit('_MQLightSocket.send', NO_CLIENT_ID, None)
+
+    def close(self):
+        LOG.entry('_MQLightSocket.close', NO_CLIENT_ID)
+        LOG.exit('_MQLightSocket.close', NO_CLIENT_ID, None)

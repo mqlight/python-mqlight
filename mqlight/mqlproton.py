@@ -15,6 +15,11 @@
 # </copyright>
 from __future__ import division, absolute_import
 import os
+import socket
+import ssl
+import select
+import threading
+from backports.ssl_match_hostname import match_hostname, CertificateError
 from . import cproton
 from .exceptions import MQLightError, SecurityError, ReplacedError, \
     NetworkError, InvalidArgumentError, NotPermittedError
@@ -26,10 +31,11 @@ except ImportError:
 
 LOG = get_logger(__name__)
 
-QOS_AT_MOST_ONCE = 0
-QOS_AT_LEAST_ONCE = 1
 STATUSES = ['UNKNOWN', 'PENDING', 'ACCEPTED', 'REJECTED', 'RELEASED',
             'MODIFIED', 'ABORTED', 'SETTLED']
+
+QOS_AT_MOST_ONCE = 0
+QOS_AT_LEAST_ONCE = 1
 
 
 class _MQLightMessage(object):
@@ -323,7 +329,9 @@ class _MQLightMessenger(object):
         LOG.entry('_MQLightMessenger.constructor', NO_CLIENT_ID)
         LOG.parms(NO_CLIENT_ID, 'name:', name)
         self.messenger = None
+        self.connection = None
         self._name = name
+        self._lock = threading.RLock()
         LOG.exit('_MQLightMessenger.constructor', NO_CLIENT_ID, None)
 
     @staticmethod
@@ -343,29 +351,11 @@ class _MQLightMessenger(object):
 
         raise NetworkError(text)
 
-    def connect(self, service, ssl_trust_certificate, ssl_verify_name):
+    def connect(self, service):
         """
         Connects to the specified service
         """
         LOG.entry('_MQLightMessenger.connect', NO_CLIENT_ID)
-        LOG.parms(
-            NO_CLIENT_ID,
-            'ssl_trust_certificate:',
-            ssl_trust_certificate)
-        LOG.parms(NO_CLIENT_ID, 'ssl_verify_name:', ssl_verify_name)
-
-        if ssl_trust_certificate:
-            if not os.path.isfile(ssl_trust_certificate):
-                msg = 'The file specified for ssl_trust_certificate {0} ' + \
-                    'does not exist or is not accessible'.format(
-                        ssl_trust_certificate)
-                raise SecurityError(msg)
-        ssl_mode = cproton.PN_SSL_VERIFY_NULL
-        if ssl_verify_name is not None:
-            if ssl_verify_name:
-                ssl_mode = cproton.PN_SSL_VERIFY_PEER_NAME
-            else:
-                ssl_mode = cproton.PN_SSL_VERIFY_PEER
 
         # If the proton messenger already exists and has been stopped then free
         # it so that we can recreate a new instance.  This situation can arise
@@ -375,6 +365,7 @@ class _MQLightMessenger(object):
             stopped = cproton.pn_messenger_stopped(self.messenger)
             if stopped:
                 self.messenger = None
+                self.connection = None
 
         # throw exception if already connected
         if self.messenger:
@@ -388,31 +379,6 @@ class _MQLightMessenger(object):
         cproton.pn_messenger_set_blocking(self.messenger, False)
         cproton.pn_messenger_set_incoming_window(self.messenger, 2147483647)
         cproton.pn_messenger_set_outgoing_window(self.messenger, 2147483647)
-
-        # Set the SSL trust certificate when required
-        if ssl_trust_certificate:
-            error = cproton.pn_messenger_set_trusted_certificates(
-                self.messenger,
-                ssl_trust_certificate)
-            LOG.data(
-                NO_CLIENT_ID,
-                'pn_messenger_set_trusted_certificates:',
-                error)
-            if error:
-                self.messenger = None
-                err = SecurityError('Failed to set trusted certificates')
-
-        if ssl_mode != cproton.PN_SSL_VERIFY_NULL:
-            error = cproton.pn_messenger_set_ssl_peer_authentication_mode(
-                self.messenger, ssl_mode)
-            LOG.data(
-                NO_CLIENT_ID,
-                'pn_messenger_set_ssl_peer_authentication_mode:',
-                error)
-            if error:
-                self.messenger = None
-                raise SecurityError(
-                    'Failed to set SSL peer authentication mode')
 
         # Set the route and enable PN_FLAGS_CHECK_ROUTES so that messenger
         # confirms that it can connect at startup.
@@ -429,12 +395,19 @@ class _MQLightMessenger(object):
         LOG.data(NO_CLIENT_ID, 'pn_messenger_route:', error)
         if error:
             self.messenger = None
-            err = MQLightError('Failed to set messenger route')
-            raise err
+            raise MQLightError('Failed to set messenger route')
         # Indicate that the route should be validated
-        cproton.pn_messenger_set_flags(
-            self.messenger,
-            cproton.PN_FLAGS_CHECK_ROUTES)
+        if cproton.pn_messenger_set_flags(
+                self.messenger,
+                cproton.PN_FLAGS_CHECK_ROUTES):
+            self.messenger = None
+            raise TypeError('Invalid set flags call')
+
+        # Indicate that an external socket is in use
+        if cproton.pn_messenger_set_external_socket(self.messenger):
+            self.messenger = None
+            raise TypeError('Failed to set external socket')
+
         # Start the messenger. This will fail if the route is invalid
         error = cproton.pn_messenger_start(self.messenger)
         LOG.data(NO_CLIENT_ID, 'pn_messenger_start:', error)
@@ -443,9 +416,16 @@ class _MQLightMessenger(object):
                 cproton.pn_messenger_error(self.messenger))
             self.messenger = None
             _MQLightMessenger._raise_error(text)
+
+        # Get the proton connection by resolving the route
+        self.connection = cproton.pn_messenger_resolve(self.messenger, pattern)
+        LOG.data(NO_CLIENT_ID, 'connection:', self.connection)
+        if not self.connection:
+            self.messenger = None
+            raise NetworkError('Unable to resolve connection')
         LOG.exit('_MQLightMessenger.connect', NO_CLIENT_ID, None)
 
-    def stop(self):
+    def stop(self, sock):
         """
         Calls stop() on the proton Messenger
         """
@@ -455,16 +435,18 @@ class _MQLightMessenger(object):
             LOG.exit('_MQLightMessenger.stop', NO_CLIENT_ID, True)
             return True
         cproton.pn_messenger_stop(self.messenger)
+        self._write(sock, False)
         stopped = cproton.pn_messenger_stopped(self.messenger)
         if stopped:
             cproton.pn_messenger_free(self.messenger)
             self.messenger = None
+            self.connection = None
         LOG.exit('_MQLightMessenger.stop', NO_CLIENT_ID, stopped)
         return stopped
 
     def _is_stopped(self):
         """
-        Returns True if the messenger if currently stopped
+        Returns True if the messenger is currently stopped
         """
         LOG.entry('_MQLightMessenger._is_stopped', NO_CLIENT_ID)
         if self.messenger is not None:
@@ -474,6 +456,24 @@ class _MQLightMessenger(object):
         LOG.exit('_MQLightMessenger._is_stopped', NO_CLIENT_ID, state)
         return state
     stopped = property(_is_stopped)
+
+    def started(self):
+        """
+        Returns True if the messenger is currently started
+        """
+        LOG.entry('_MQLightMessenger._started', NO_CLIENT_ID)
+        if self.messenger is not None:
+            started = cproton.pn_messenger_started(self.messenger)
+            error = cproton.pn_messenger_errno(self.messenger)
+            if error:
+                text = cproton.pn_error_text(
+                    cproton.pn_messenger_error(
+                        self.messenger))
+                _MQLightMessenger._raise_error(text)
+        else:
+            started = False
+        LOG.exit('_MQLightMessenger._started', NO_CLIENT_ID, started)
+        return started
 
     def set_snd_settle_mode(self, mode):
         """
@@ -535,29 +535,17 @@ class _MQLightMessenger(object):
         LOG.exit(
             '_MQLightMessenger.get_remote_idle_timeout',
             NO_CLIENT_ID,
-            remote_idle_timeout / 1000)
-        return remote_idle_timeout / 1000
+            remote_idle_timeout)
+        return remote_idle_timeout
 
-    def work(self, timeout):
-        """
-        Sends or receives any outstanding messages
-        """
-        LOG.entry('_MQLightMessenger.work', NO_CLIENT_ID)
-        LOG.parms(NO_CLIENT_ID, 'timeout:', timeout)
-        if self.messenger is None:
-            raise NetworkError('Not connected')
-
-        status = cproton.pn_messenger_work(self.messenger, timeout)
-        LOG.exit('_MQLightMessenger.work', NO_CLIENT_ID, status)
-        return status
-
-    def flow(self, address, credit):
+    def flow(self, address, credit, sock):
         """
         Process messages based on the number of credit available
         """
         LOG.entry('_MQLightMessenger.flow', NO_CLIENT_ID)
         LOG.parms(NO_CLIENT_ID, 'address:', address)
         LOG.parms(NO_CLIENT_ID, 'credit:', credit)
+        LOG.parms(NO_CLIENT_ID, 'sock:', sock)
         # throw exception if not connected
         if self.messenger is None:
             raise NetworkError('Not connected')
@@ -566,6 +554,7 @@ class _MQLightMessenger(object):
         link = cproton.pn_messenger_get_link(self.messenger, address, False)
         if link:
             cproton.pn_link_flow(link, credit)
+            self._write(sock, False)
         LOG.exit('_MQLightMessenger.flow', NO_CLIENT_ID, None)
 
     def put(self, msg, qos):
@@ -609,7 +598,7 @@ class _MQLightMessenger(object):
         LOG.exit('_MQLightMessenger.put', NO_CLIENT_ID, True)
         return True
 
-    def send(self):
+    def send(self, sock):
         """
         Sends the messages on the outgoing queue
         """
@@ -626,23 +615,17 @@ class _MQLightMessenger(object):
                     cproton.pn_messenger_error(
                         self.messenger)))
 
-        cproton.pn_messenger_work(self.messenger, 0)
-        error = cproton.pn_messenger_errno(self.messenger)
-        if error:
-            raise MQLightError(
-                cproton.pn_error_text(
-                    cproton.pn_messenger_error(
-                        self.messenger)))
+        self._write(sock, False)
 
         LOG.exit('_MQLightMessenger.send', NO_CLIENT_ID, True)
         return True
 
-    def receive(self, timeout):
+    def receive(self, sock):
         """
         Retrieves messages from the incoming queue
         """
         LOG.entry('_MQLightMessenger.receive', NO_CLIENT_ID)
-        LOG.parms(NO_CLIENT_ID, 'timeout:', timeout)
+        LOG.parms(NO_CLIENT_ID, 'sock:', sock)
         # throw exception if not connected
         if self.messenger is None:
             raise NetworkError('Not connected')
@@ -654,13 +637,7 @@ class _MQLightMessenger(object):
                 cproton.pn_messenger_error(
                     self.messenger))
             _MQLightMessenger._raise_error(text)
-        cproton.pn_messenger_work(self.messenger, timeout)
-        error = cproton.pn_messenger_errno(self.messenger)
-        if error:
-            text = cproton.pn_error_text(
-                cproton.pn_messenger_error(
-                    self.messenger))
-            _MQLightMessenger._raise_error(text)
+
         messages = []
         count = cproton.pn_messenger_incoming(self.messenger)
         LOG.data(NO_CLIENT_ID, 'messages count: {0}'.format(count))
@@ -696,15 +673,18 @@ class _MQLightMessenger(object):
                     'No link associated with received message tracker for ' +
                     'address: {0}'.format(
                         cproton.pn_message_get_address(message)))
+
+        self._write(sock, False)
         LOG.exit('_MQLightMessenger.receive', NO_CLIENT_ID, messages)
         return messages
 
-    def settle(self, message):
+    def settle(self, message, sock):
         """
         Settles a message
         """
         LOG.entry('_MQLightMessenger.settle', NO_CLIENT_ID)
         LOG.parms(NO_CLIENT_ID, 'message:', message)
+        LOG.parms(NO_CLIENT_ID, 'sock:', sock)
         # throw exception if not connected
         if self.messenger is None:
             raise NetworkError('Not connected')
@@ -724,30 +704,7 @@ class _MQLightMessenger(object):
         elif status != 0:
             raise NetworkError('Failed to settle')
 
-        # For incoming messages, if we haven't already settled it, block for a
-        # while until we *think* the settlement disposition has been
-        # communicated over the network. We detect that by querying
-        # pn_transport_quiesced which should return True once all pending
-        # output has been written to the wire.
-        # (as per other comments, ideally we should wrap this in a callback...)
-        is_receiver = cproton.pn_link_is_receiver(
-            cproton.pn_delivery_link(delivery))
-        if delivery is not None and is_receiver:
-            session = cproton.pn_link_session(
-                cproton.pn_delivery_link(delivery))
-            if session:
-                connection = cproton.pn_session_connection(session)
-                if connection:
-                    transport = cproton.pn_connection_transport(connection)
-                    if transport:
-                        while not cproton.pn_transport_quiesced(transport):
-                            cproton.pn_messenger_work(self.messenger, 0)
-                            error = cproton.pn_messenger_errno(self.messenger)
-                            if error:
-                                text = cproton.pn_error_text(
-                                    cproton.pn_messenger_error(
-                                        self.messenger))
-                                _MQLightMessenger._raise_error(text)
+        self._write(sock, False)
         LOG.exit('_MQLightMessenger.settle', NO_CLIENT_ID, True)
         return True
 
@@ -792,6 +749,7 @@ class _MQLightMessenger(object):
         """
         LOG.entry('_MQLightMessenger.accept', NO_CLIENT_ID)
         LOG.parms(NO_CLIENT_ID, 'message:', message)
+
         # throw exception if not connected
         if self.messenger is None:
             raise NetworkError('Not connected')
@@ -805,6 +763,7 @@ class _MQLightMessenger(object):
             _MQLightMessenger._raise_error(text)
         elif status != 0:
             raise NetworkError('Failed to accept')
+
         LOG.exit('_MQLightMessenger.accept', NO_CLIENT_ID, True)
         return True
 
@@ -814,6 +773,7 @@ class _MQLightMessenger(object):
         """
         LOG.entry('_MQLightMessenger.status', NO_CLIENT_ID)
         LOG.parms(NO_CLIENT_ID, 'message:', message)
+
         # throw exception if not connected
         if self.messenger is None:
             raise NetworkError('Not connected')
@@ -822,10 +782,11 @@ class _MQLightMessenger(object):
         disp = cproton.pn_messenger_status(self.messenger, tracker)
         LOG.data(NO_CLIENT_ID, 'status: ', disp)
         status = STATUSES[disp]
+
         LOG.exit('_MQLightMessenger.status', NO_CLIENT_ID, status)
         return status
 
-    def subscribe(self, address, qos, ttl, credit):
+    def subscribe(self, address, qos, ttl, credit, sock):
         """
         Subscribes to a topic
         """
@@ -836,6 +797,7 @@ class _MQLightMessenger(object):
         LOG.parms(NO_CLIENT_ID, 'qos:', qos)
         LOG.parms(NO_CLIENT_ID, 'ttl:', ttl)
         LOG.parms(NO_CLIENT_ID, 'credit:', credit)
+        LOG.parms(NO_CLIENT_ID, 'sock:', sock)
 
         # throw exception if not connected
         if self.messenger is None:
@@ -863,26 +825,43 @@ class _MQLightMessenger(object):
                 cproton.pn_messenger_error(self.messenger))
             _MQLightMessenger._raise_error(text)
 
-        link = cproton.pn_messenger_get_link(self.messenger, address, False)
-        if not link:
-            # throw Error if unable to find a matching Link
-            raise MQLightError(
-                'unable to locate link for {0}'.format(address))
-        while not cproton.pn_link_state(link) & cproton.PN_REMOTE_ACTIVE:
-            cproton.pn_messenger_work(self.messenger, 50)
-            error = cproton.pn_messenger_errno(self.messenger)
-            if error:
-                text = cproton.pn_error_text(
-                    cproton.pn_messenger_error(self.messenger))
-                _MQLightMessenger._raise_error(text)
-
-        if credit > 0:
-            cproton.pn_link_flow(link, credit)
+        self._write(sock, False)
 
         LOG.exit('_MQLightMessenger.subscribe', NO_CLIENT_ID, True)
         return True
 
-    def unsubscribe(self, address, ttl=None):
+    def subscribed(self, address):
+        """
+        Return True if the client is subscribed to the specified topic
+        """
+        LOG.entry('_MQLightMessenger.subscribed', NO_CLIENT_ID)
+        LOG.parms(NO_CLIENT_ID, 'address:', address)
+
+        # throw Error if not connected
+        if self.messenger is None:
+            raise NetworkError('Not connected')
+
+        link = cproton.pn_messenger_get_link(self.messenger, address, False)
+        error = cproton.pn_messenger_errno(self.messenger)
+        if error:
+            text = cproton.pn_error_text(
+                cproton.pn_messenger_error(self.messenger))
+            _MQLightMessenger._raise_error(text)
+
+        if link is None:
+            # throw Error if unable to find a matching Link
+            raise MQLightError(
+                'Unable to locate link for {0}'.format(address))
+
+        if not (cproton.pn_link_state(link) & cproton.PN_REMOTE_ACTIVE):
+            subscribed = False
+        else:
+            subscribed = True
+
+        LOG.exit('_MQLightMessenger.subscribed', NO_CLIENT_ID, subscribed)
+        return subscribed
+
+    def unsubscribe(self, address, ttl, sock):
         """
         Unsubscribes from a topic
         """
@@ -891,6 +870,7 @@ class _MQLightMessenger(object):
             ttl = -1
         LOG.parms(NO_CLIENT_ID, 'address:', address)
         LOG.parms(NO_CLIENT_ID, 'ttl:', ttl)
+        LOG.parms(NO_CLIENT_ID, 'sock:', sock)
 
         # throw exception if not connected
         if self.messenger is None:
@@ -913,49 +893,71 @@ class _MQLightMessenger(object):
             cproton.pn_terminus_set_timeout(cproton.pn_link_target(link), ttl)
             cproton.pn_terminus_set_timeout(cproton.pn_link_source(link), ttl)
 
-        cproton.pn_link_close(link)
-
         # Check if we are detaching with @closed=true
-        closed = True
+        closing = True
         expiry_policy = cproton.pn_terminus_get_expiry_policy(
             cproton.pn_link_target(link))
         timeout = cproton.pn_terminus_get_timeout(cproton.pn_link_target(link))
         if expiry_policy == cproton.PN_NEVER or timeout > 0:
-            closed = False
-        LOG.data(NO_CLIENT_ID, 'closed:', closed)
+            closing = False
+        LOG.data(NO_CLIENT_ID, 'closing:', closing)
 
-        if closed:
-            while not cproton.pn_link_state(link) & cproton.PN_REMOTE_CLOSED:
-                cproton.pn_messenger_work(self.messenger, 50)
-                error = cproton.pn_messenger_errno(self.messenger)
-                LOG.data(NO_CLIENT_ID, 'error:', error)
-                if error:
-                    text = cproton.pn_error_text(
-                        cproton.pn_messenger_error(
-                            self.messenger))
-                    _MQLightMessenger._raise_error(text)
+        if closing:
+            cproton.pn_link_close(link)
         else:
-            # Otherwise, all we can do is keep calling work until our close
-            # request has been pushed over the network connection as we won't
-            # get an ACK
-            session = cproton.pn_link_session(link)
-            if session:
-                connection = cproton.pn_session_connection(session)
-                if connection:
-                    transport = cproton.pn_connection_transport(connection)
-                    if transport:
-                        while not cproton.pn_transport_quiesced(transport):
-                            cproton.pn_messenger_work(self.messenger, 0)
-                            error = cproton.pn_messenger_errno(self.messenger)
-                            LOG.data(NO_CLIENT_ID, 'error:', error)
-                            if error:
-                                text = cproton.pn_error_text(
-                                    cproton.pn_messenger_error(
-                                        self.messenger))
-                                _MQLightMessenger._raise_error(text)
+            cproton.pn_link_detach(link)
+        self._write(sock, False)
 
         LOG.exit('_MQLightMessenger.Unsubscribe', NO_CLIENT_ID, True)
         return True
+
+    def unsubscribed(self, address):
+        """
+        Return True if the client is not subscribed to the specified topic
+        """
+        LOG.entry('_MQLightMessenger.unsubscribed', NO_CLIENT_ID)
+        LOG.parms(NO_CLIENT_ID, 'address:', address)
+
+        # throw Error if not connected
+        if self.messenger is None:
+            raise NetworkError('Not connected')
+
+        # find link based on address, in any state.
+        link = cproton.pn_messenger_get_stated_link(
+            self.messenger,
+            address,
+            False,
+            0)
+
+        if link is None:
+            # throw Error if unable to find a matching Link
+            raise MQLightError('Unable to locate link for {0}'.format(address))
+
+        # Check if we are detaching with @closed=true
+        closing = True
+        expiry_policy = cproton.pn_terminus_get_expiry_policy(
+            cproton.pn_link_target(link))
+        timeout = cproton.pn_terminus_get_timeout(cproton.pn_link_target(link))
+        if expiry_policy == cproton.PN_NEVER or timeout > 0:
+            closing = False
+        LOG.data(NO_CLIENT_ID, 'closing:', closing)
+
+        # check if the remote end has acknowledged the close or detach
+        if closing:
+            if not (cproton.pn_link_state(link) & cproton.PN_REMOTE_CLOSED):
+                unsubscribed = False
+            else:
+                unsubscribed = True
+        else:
+            if not cproton.pn_link_remote_detached(link):
+                unsubscribed = False
+            else:
+                unsubscribed = True
+                cproton.pn_messenger_reclaim_link(self.messenger, link)
+                cproton.pn_link_free(link)
+
+        LOG.exit('_MQLightMessenger.unsubscribed', NO_CLIENT_ID, unsubscribed)
+        return unsubscribed
 
     def pending_outbound(self, address):
         """
@@ -963,6 +965,7 @@ class _MQLightMessenger(object):
         """
         LOG.entry('_MQLightMessenger.pending_outbound', NO_CLIENT_ID)
         LOG.parms(NO_CLIENT_ID, 'address:', address)
+
         # throw exception if not connected
         if self.messenger is None:
             raise NetworkError('Not connected')
@@ -975,5 +978,149 @@ class _MQLightMessenger(object):
             raise NetworkError('Not connected')
         elif pending > 0:
             result = True
+
         LOG.exit('_MQLightMessenger.pending_outbound', NO_CLIENT_ID, result)
         return result
+
+    def pop(self, sock, force):
+        LOG.entry('_MQLightMessenger.pop', NO_CLIENT_ID)
+        LOG.parms(NO_CLIENT_ID, 'sock:', sock)
+        LOG.parms(NO_CLIENT_ID, 'force:', force)
+        written = self._write(sock, force)
+        LOG.exit('_MQLightMessenger.pop', NO_CLIENT_ID, written)
+        return written
+
+    def push(self, chunk):
+        LOG.entry('_MQLightMessenger.push', NO_CLIENT_ID)
+        LOG.parms(NO_CLIENT_ID, 'chunk:', chunk)
+
+        with self._lock:
+            if self.messenger and self.connection:
+                pushed = cproton.pn_connection_push(
+                    self.connection,
+                    chunk,
+                    len(chunk))
+                transport = cproton.pn_connection_transport(self.connection)
+                n = cproton.pn_transport_pending(transport)
+                LOG.data(NO_CLIENT_ID, 'after push transport_pending:', n)
+            else:
+                # This connection has already been closed, so this data can
+                # never be pushed in, so just return saying it has so the data
+                # will be discarded.
+                LOG.data(
+                    NO_CLIENT_ID,
+                    'connection already closed: discarding data')
+                pushed = len(chunk)
+
+        LOG.exit('_MQLightMessenger.push', NO_CLIENT_ID, pushed)
+        return pushed
+
+    def _write(self, sock, force):
+        LOG.entry_often('_MQLightMessenger._write', NO_CLIENT_ID)
+        LOG.parms(NO_CLIENT_ID, 'sock:', sock)
+        LOG.parms(NO_CLIENT_ID, 'force:', force)
+
+        with self._lock:
+            # Checking for pending data requires a messenger connection
+            n = 0
+            if self.messenger and self.connection:
+                transport = cproton.pn_connection_transport(self.connection)
+                if transport:
+                    n = cproton.pn_transport_pending(transport)
+                    # Force a pop, causing a heartbeat to be generated, if
+                    # necessary
+                    if force:
+                        closed = cproton.pn_connection_pop(self.connection, 0)
+                        if closed:
+                            LOG.data(NO_CLIENT_ID, 'connection is closed')
+                            self.connection = None
+
+                    if self.connection and n > 0:
+                        # write n bytes to stream
+                        buf = cproton.pn_transport_head(transport, n)
+                        LOG.parms(NO_CLIENT_ID, 'buf:', buf)
+                        sent = sock.send(buf)
+
+                        closed = cproton.pn_connection_pop(self.connection, n)
+                        if closed:
+                            LOG.data(NO_CLIENT_ID, 'connection is closed')
+                            self.connection = None
+                    else:
+                        n = 0
+                else:
+                    n = -1
+            else:
+                n = -1
+
+        LOG.exit_often('_MQLightMessenger._write', NO_CLIENT_ID, n)
+        return n
+
+    def heartbeat(self, sock):
+        LOG.entry('_MQLightMessenger.heartbeat', NO_CLIENT_ID)
+        LOG.parms(NO_CLIENT_ID, 'sock:', sock)
+        self._write(sock, True)
+        LOG.exit('_MQLightMessenger.heartbeat', NO_CLIENT_ID, None)
+
+
+class _MQLightSocket(object):
+
+    def __init__(self, address, ssl_options, on_read):
+        LOG.entry('_MQLightSocket.__init__', NO_CLIENT_ID)
+        LOG.parms(NO_CLIENT_ID, 'address:', address)
+        LOG.parms(NO_CLIENT_ID, 'ssl_options:', ssl_options)
+        LOG.parms(NO_CLIENT_ID, 'on_read:', on_read)
+        self.running = False
+        self.on_read = on_read
+        try:
+            self.sock = socket.socket(
+                socket.AF_INET,
+                socket.SOCK_STREAM)
+            if ssl_options['cert'] is not None:
+                LOG.data(NO_CLIENT_ID, 'wrapping the socket in an SSL context')
+                self.sock = ssl.wrap_socket(
+                    self.sock,
+                    cert_reqs=ssl.CERT_REQUIRED,
+                    ca_certs=ssl_options['cert'])
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.sock.connect(address)
+
+            # Check the hostname
+            if ssl_options['verify']:
+                try:
+                    match_hostname(self.sock.getpeercert(), address[0])
+                except CertificateError, ce:
+                    raise ssl.SSLError(
+                       'SSL Failure: certificate verify failed')
+            self.running = True
+            self.io_loop = threading.Thread(target=self.loop)
+            self.io_loop.daemon = True
+            self.io_loop.start()
+        except (socket.error, ssl.SSLError) as exc:
+            LOG.error('_MQLightSocket.__init__', NO_CLIENT_ID, exc)
+            self.running = False
+            raise exc
+        LOG.exit('_MQLightSocket.__init__', NO_CLIENT_ID, None)
+
+    def loop(self):
+        LOG.entry('_MQLightSocket.loop', NO_CLIENT_ID)
+        while self.running:
+            read, write, exc = select.select([self.sock], [], [])
+            if read:
+                data = self.sock.recv(4096)
+                if data:
+                    callback = threading.Thread(
+                        target=self.on_read, args=(data,))
+                    callback.start()
+        if not self.running:
+            self.sock.close()
+        LOG.exit('_MQLightSocket.loop', NO_CLIENT_ID, None)
+
+    def send(self, msg):
+        LOG.entry('_MQLightSocket.send', NO_CLIENT_ID)
+        sent = self.sock.send(msg)
+        LOG.exit('_MQLightSocket.send', NO_CLIENT_ID, sent)
+
+    def close(self):
+        LOG.entry('_MQLightSocket.close', NO_CLIENT_ID)
+        self.running = False
+        LOG.exit('_MQLightSocket.close', NO_CLIENT_ID, None)

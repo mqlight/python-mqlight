@@ -93,7 +93,7 @@ class TestSend(object):
                     if test['valid']:
                         client.send(test['topic'], 'message')
                     else:
-                        with pytest.raises(InvalidArgumentError):
+                        with pytest.raises(TypeError):
                             client.send(test['topic'], 'message')
             except Exception as exc:
                 pytest.fail('Unexpected Exception ' + str(exc))

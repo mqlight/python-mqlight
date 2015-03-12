@@ -386,7 +386,7 @@ class TestCreateClient(object):
                     invalid_ssl_test(ssl_data['ssl_trust_certificate'],
                                      ssl_data['ssl_verify_name'])
 
-            def started(err, service):
+            def started(err):
                 """started listener"""
                 client.stop()
                 bad_certificate_fd.close()

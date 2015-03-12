@@ -124,12 +124,23 @@ if args.repeat is not None and repeat > 1:
     messages = messages * repeat
 PENDING = len(messages)
 
+
+def close(rc, err=None):
+    if err:
+        print('*** error ***', file=sys.stderr)
+        print(err, file=sys.stderr)
+    if client:
+        client.stop()
+    print('Exiting.')
+    exit(rc)
+
+client = None
 security_options = {}
 if args.trust_certificate is not None:
     security_options['ssl_trust_certificate'] = args.trust_certificate
     if args.service != SERVICE:
         if not service.startswith('amqps'):
-            error('The service URL must start with "amqps://" when using a '
+            close(1, 'The service URL must start with "amqps://" when using a '
                   'trust certificate.')
     else:
         service = 'amqps://localhost'
@@ -143,7 +154,7 @@ if args.file is not None:
             message.append(byte)
             byte = f.read(1)
     if len(message) == 0:
-        error('An error happened while reading {0}'.format(args.file))
+        close(1, 'An error happened while reading {0}'.format(args.file))
     else:
         messages.append(message)
 
@@ -170,7 +181,7 @@ def started(err):
 
 def state_changed(state, msg=None):
     if state == mqlight.ERROR:
-        error(msg)
+        close(1, msg)
     elif state == mqlight.DRAIN:
         send_complete.set()
         send_next_message()
@@ -211,7 +222,7 @@ def sent(err, topic, data, options):
     global PENDING
     PENDING -= 1
     if err:
-        error('Problem with send request: {0}'.format(err))
+        close(1, 'Problem with send request: {0}'.format(err))
     else:
         if data:
             print('{0}{1}'.format(
@@ -221,20 +232,6 @@ def sent(err, topic, data, options):
     if PENDING == 0:
         client.stop()
 
-
-def error(err):
-    """
-    Error callback
-    """
-    print('*** error ***', file=sys.stderr)
-    if err:
-        print(err, file=sys.stderr)
-    if client:
-        client.stop()
-    print('Exiting.')
-    exit(1)
-
-client = None
 try:
     client = mqlight.Client(
         service=service,
@@ -243,4 +240,4 @@ try:
         on_started=started,
         on_state_changed=state_changed)
 except Exception as exc:
-    error(exc)
+    close(1, exc)

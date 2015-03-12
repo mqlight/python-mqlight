@@ -133,6 +133,7 @@ setup(
             runtime_library_dirs=get_runtime_library_dirs(),
             extra_link_args=get_extra_link_args()),
     ],
+    install_requires=['backports.ssl_match_hostname>=3.4.0.2'],
     test_suite='tests',
     tests_require=[
         'pytest_cov',

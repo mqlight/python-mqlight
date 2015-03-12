@@ -280,10 +280,6 @@ class MQLightLog(object):
                     'Python Version:   {0}'.format(sys.version), keys)
         self._write(FFDC,
                     'Python Arguments: {0}'.format(sys.argv), keys)
-        self._write(FFDC,
-                    'Module Name:      {0}'.format(mqlight.__name__), keys)
-        self._write(FFDC,
-                    'Module Version:   {0}'.format(mqlight.__version__), keys)
         if not IS_WIN:
             self._write(FFDC,
                         'User Id:          {0}'.format(os.getuid()), keys)
