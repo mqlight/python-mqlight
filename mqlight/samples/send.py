@@ -159,11 +159,11 @@ if args.file is not None:
         messages.append(message)
 
 
-def send_next_message():
+def send_messages():
     """
     Sends the next message
     """
-    if len(messages) > 0:
+    while messages:
         if delay > 0:
             time.sleep(delay)
         send_message()
@@ -176,7 +176,7 @@ def started(err):
     print('Connected to {0} using client-id {1}'.format(
         client.get_service(), client.get_id()))
     print('Sending to: {0}'.format(topic))
-    send_message()
+    send_messages()
 
 
 def state_changed(state, msg=None):
@@ -184,15 +184,15 @@ def state_changed(state, msg=None):
         close(1, msg)
     elif state == mqlight.DRAIN:
         send_complete.set()
-        send_next_message()
+        send_message()
 
 
 def send_message():
     """
     Sends a message
     """
-    if messages:
-        with LOCK:
+    with LOCK:
+        if messages:
             send_complete.clear()
             body = messages.pop(0)
             options = {'qos': mqlight.QOS_AT_LEAST_ONCE}
@@ -207,8 +207,7 @@ def send_message():
                     data=body,
                     options=options,
                     on_sent=sent):
-                # Send the next message now
-                send_next_message()
+                return
             else:
                 # There's a backlog of messages to send, so wait until the
                 # backlog is cleared before sending any more
