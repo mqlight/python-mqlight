@@ -1064,10 +1064,11 @@ class _MQLightMessenger(object):
 
 class _MQLightSocket(object):
 
-    def __init__(self, address, ssl_options, on_read):
+    def __init__(self, address, tls, security_options, on_read):
         LOG.entry('_MQLightSocket.__init__', NO_CLIENT_ID)
         LOG.parms(NO_CLIENT_ID, 'address:', address)
-        LOG.parms(NO_CLIENT_ID, 'ssl_options:', ssl_options)
+        LOG.parms(NO_CLIENT_ID, 'tls:', tls)
+        LOG.parms(NO_CLIENT_ID, 'security_options:', security_options)
         LOG.parms(NO_CLIENT_ID, 'on_read:', on_read)
         self.running = False
         self.on_read = on_read
@@ -1075,17 +1076,17 @@ class _MQLightSocket(object):
             self.sock = socket.socket(
                 socket.AF_INET,
                 socket.SOCK_STREAM)
-            if ssl_options['cert'] is not None:
+            if tls:
                 LOG.data(NO_CLIENT_ID, 'wrapping the socket in an SSL context')
                 self.sock = ssl.wrap_socket(
                     self.sock,
                     cert_reqs=ssl.CERT_REQUIRED,
-                    ca_certs=ssl_options['cert'])
+                    ca_certs=security_options.ssl_trust_certificate)
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.sock.connect(address)
 
             # Check the hostname
-            if ssl_options['verify']:
+            if tls and security_options.ssl_verify_name:
                 try:
                     match_hostname(self.sock.getpeercert(), address[0])
                 except CertificateError, ce:

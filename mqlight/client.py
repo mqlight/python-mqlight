@@ -1544,20 +1544,12 @@ class Client(object):
                     connect_service = service
 
                 address = (connect_url.hostname, connect_url.port)
-                ssl_options = {}
-                s_o = self._security_options
-                if s_o.ssl_trust_certificate is not None:
-                    ssl_options['cert'] = s_o.ssl_trust_certificate
-                else:
-                    ssl_options['cert'] = None
-                if s_o.ssl_verify_name is not None:
-                    ssl_options['verify'] = s_o.ssl_verify_name
-                else:
-                    ssl_options['verify'] = True
+                tls = True if service.startswith('amqps') else False
                 try:
                     self._sock = _MQLightSocket(
                         address,
-                        ssl_options,
+                        tls,
+                        self._security_options,
                         self._on_read)
                     self._messenger.connect(urlparse(connect_service))
 

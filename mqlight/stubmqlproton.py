@@ -335,14 +335,15 @@ class _MQLightMessenger(object):
 
 class _MQLightSocket(object):
 
-    def __init__(self, address, ssl_options, on_read):
+    def __init__(self, address, tls, security_options, on_read):
         LOG.entry('_MQLightSocket.__init__', NO_CLIENT_ID)
         err = None
+        verify = security_options.ssl_verify_name
         if 'bad' in address[0]:
             err = TypeError('ECONNREFUSED bad service ' + address[0])
-        if ssl_options['cert'] == 'BadCertificate':
+        if security_options.ssl_trust_certificate == 'BadCertificate':
             err = MQLightError('Bad Certificate')
-        elif ssl_options['cert'] == 'BadVerify2' and ssl_options['verify']:
+        elif security_options.ssl_trust_certificate == 'BadVerify2' and verify:
             err = MQLightError('Bad verify name')
         elif CONNECT_STATUS != 0:
             err = MQLightError('connect error: ' + CONNECT_STATUS)
