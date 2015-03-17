@@ -22,8 +22,8 @@ from codecs import open as codecs_open
 from os import path, environ
 from platform import system
 
-if not sys.version_info[:2] >= (2, 7):
-    print('ERROR: Python 2.7 or newer is required')
+if not sys.version_info[:2] >= (2, 6):
+    print('ERROR: Python 2.6 or newer is required')
     sys.exit(1)
 
 HERE = path.abspath(path.dirname(__file__))
@@ -104,6 +104,7 @@ setup(
         'License :: Other/Proprietary License',
         'Operating System :: OS Independent',
         'Programming Language :: Python :: 2',
+        'Programming Language :: Python :: 2.6',
         'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.3',
@@ -133,7 +134,10 @@ setup(
             runtime_library_dirs=get_runtime_library_dirs(),
             extra_link_args=get_extra_link_args()),
     ],
-    install_requires=['backports.ssl_match_hostname>=3.4.0.2'],
+    install_requires=[
+        'argparse',
+        'backports.ssl_match_hostname>=3.4.0.2'
+    ],
     test_suite='tests',
     tests_require=[
         'pytest_cov',
