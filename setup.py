@@ -31,7 +31,7 @@ with codecs_open(path.join(HERE, 'description.rst'), encoding='utf-8') as f:
     LONG_DESCRIPTION = f.read()
 
 if system() == 'Darwin':
-    environ['ARCHFLAGS'] = '-arch x86_64'
+    environ['ARCHFLAGS'] = '-arch x86_64 -mmacosx-version-min=10.8'
 
 
 def get_sources():
