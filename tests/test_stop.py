@@ -45,8 +45,8 @@ class TestStop(object):
             """stopped listener"""
             test_is_done.set()
         client.stop(stopped)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
         assert client.get_state() == mqlight.STOPPED
 
     def test_stop_argument_is_function(self):
@@ -96,8 +96,8 @@ class TestStop(object):
         client = mqlight.Client('amqp://host:1234',
                                 'test_stop_when_already_stopped',
                                 on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_stop_too_many_arguments(self):
         """

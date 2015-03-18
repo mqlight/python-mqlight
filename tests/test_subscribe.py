@@ -48,8 +48,8 @@ class TestSubscribe(object):
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_too_few_arguments',
                                 on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_subscribe_too_many_arguments(self):
         """
@@ -69,8 +69,8 @@ class TestSubscribe(object):
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_too_many_arguments',
                                 on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_subscribe_callback_must_be_a_function(self):
         """
@@ -90,8 +90,8 @@ class TestSubscribe(object):
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_callback_must_be_a_function',
                                 on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_subscribe_ok_callback(self):
         """
@@ -115,8 +115,8 @@ class TestSubscribe(object):
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_ok_callback',
                                 on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_subscribe_fail_callback(self):
         """
@@ -138,8 +138,8 @@ class TestSubscribe(object):
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_fail_callback',
                                 on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_subscribe_when_stopped(self):
         """
@@ -170,8 +170,8 @@ class TestSubscribe(object):
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_returns_client',
                                 on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_subscribe_topics(self):
         """
@@ -211,8 +211,8 @@ class TestSubscribe(object):
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_topics',
                                 on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_subscribe_share_names(self):
         """
@@ -245,8 +245,8 @@ class TestSubscribe(object):
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_share_names',
                                 on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_subscribe_options(self):
         """
@@ -287,8 +287,8 @@ class TestSubscribe(object):
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_options',
                                 on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_subscribe_qos(self):
         """
@@ -328,8 +328,8 @@ class TestSubscribe(object):
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_qos',
                                 on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_subscribe_auto_confirm(self):
         """
@@ -375,8 +375,8 @@ class TestSubscribe(object):
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_auto_confirm',
                                 on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_subscribe_ttl_validity(self):
         """
@@ -419,5 +419,5 @@ class TestSubscribe(object):
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_ttl_validity',
                                 on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()

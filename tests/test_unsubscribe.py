@@ -69,8 +69,8 @@ class TestUnsubscribe(object):
             'test_unsubscribe_too_many_arguments',
             on_started=started)
         func = Mock()
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_unsubscribe_callback_must_be_function(self):
         """
@@ -107,8 +107,8 @@ class TestUnsubscribe(object):
             on_started=started
         )
 
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_unsubscribe_ok_callback(self):
         """
@@ -150,8 +150,8 @@ class TestUnsubscribe(object):
             'amqp://host',
             'test_unsubscribe_ok_callback',
             on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_unsubscribe_when_stopped(self):
         """
@@ -167,8 +167,8 @@ class TestUnsubscribe(object):
                 client.unsubscribe('/foo')
             test_is_done.set()
         client.stop(stopped)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_unsubscribe_when_not_subscribed(self):
         """
@@ -183,7 +183,8 @@ class TestUnsubscribe(object):
             client.subscribe(
                 '/bar',
                 on_subscribed=lambda _x, _y, _z: subscribe_event.set())
-            assert subscribe_event.wait(2.0)
+            subscribe_event.wait(2.0)
+            assert subscribe_event.is_set()
             with pytest.raises(UnsubscribedError):
                 client.unsubscribe('/foo')
             client.stop()
@@ -192,8 +193,8 @@ class TestUnsubscribe(object):
             'amqp://host',
             'test_unsubscribe_when_not_subscribed',
             on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_unsubscribe_returns_client(self):
         """
@@ -202,10 +203,14 @@ class TestUnsubscribe(object):
         purposes).
         """
         test_is_done = threading.Event()
-
         def started(err):
             """started listener"""
-            client.subscribe('/foo')
+            subscribe_event = threading.Event()
+            client.subscribe(
+                '/foo',
+                on_subscribed=lambda _x, _y, _z: subscribe_event.set())
+            subscribe_event.wait(2.0)
+            assert  subscribe_event.is_set()
             assert client.unsubscribe('/foo') == client
             client.stop()
             test_is_done.set()
@@ -213,8 +218,8 @@ class TestUnsubscribe(object):
             'amqp://host',
             'test_unsubscribe_returns_client',
             on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_unsubscribe_topics(self):
         """
@@ -257,8 +262,8 @@ class TestUnsubscribe(object):
             'test_unsubscribe_topics',
             on_started=started)
 
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_unsubscribe_share_names(self):
         """
@@ -294,8 +299,8 @@ class TestUnsubscribe(object):
             'test_unsubscribe_share_names',
             on_started=started)
 
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_unsubscribe_options(self):
         """
@@ -346,8 +351,8 @@ class TestUnsubscribe(object):
             'test_unsubscribe_options',
             on_started=started)
 
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_unsubscribe_ttl_validity(self):
         """
@@ -393,5 +398,5 @@ class TestUnsubscribe(object):
             'test_unsubscribe_ttl_validity',
             on_started=started)
 
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()

@@ -59,8 +59,8 @@ class TestCreateClient(object):
             on_started=started)
         assert client.get_state() in (mqlight.STARTING, mqlight.STARTED)
         assert client.get_id() == client_id
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_service_not_a_string(self):
         """
@@ -187,13 +187,13 @@ class TestCreateClient(object):
         test_is_done = threading.Event()
         data = [
             {'uri': 'amqp://host', 'expected': 'amqp://host:5672'},
-            #{'uri': 'amqps://host', 'expected': 'amqps://host:5671'},
+            {'uri': 'amqps://host', 'expected': 'amqps://host:5671'},
             {'uri': 'AmQp://HoSt', 'expected': 'amqp://host:5672'},
-            #{'uri': 'aMqPs://hOsT', 'expected': 'amqps://host:5671'},
+            {'uri': 'aMqPs://hOsT', 'expected': 'amqps://host:5671'},
             {'uri': 'amqp://host:1234', 'expected': 'amqp://host:1234'},
-            #{'uri': 'amqps://host:4321', 'expected': 'amqps://host:4321'},
+            {'uri': 'amqps://host:4321', 'expected': 'amqps://host:4321'},
             {'uri': 'aMqP://HoSt:1234', 'expected': 'amqp://host:1234'},
-            #{'uri': 'AmQpS://hOsT:4321', 'expected': 'amqps://host:4321'}
+            {'uri': 'AmQpS://hOsT:4321', 'expected': 'amqps://host:4321'}
         ]
         clients = []
         count = 0
@@ -207,12 +207,13 @@ class TestCreateClient(object):
                 service=opts['uri'],
                 client_id=str(count),
                 on_started=started))
-            assert started_event.wait(2.0)
+            started_event.wait(2.0)
+            assert started_event.is_set()
             count += 1
             if count == len(data):
                 test_is_done.set()
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
         for client in clients:
             expected_service = data[int(client.get_id())]['expected']
             assert client.get_service() == expected_service
@@ -333,8 +334,8 @@ class TestCreateClient(object):
         valid_ssl_test(
             ssl_data['ssl_trust_certificate'],
             ssl_data['ssl_verify_name'])
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_invalid_ssl_options(self):
         """
@@ -405,8 +406,8 @@ class TestCreateClient(object):
         ssl_data = data.pop()
         invalid_ssl_test(ssl_data['ssl_trust_certificate'],
                          ssl_data['ssl_verify_name'])
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_create_client_multiple_with_same_id(self):
         """
@@ -438,8 +439,8 @@ class TestCreateClient(object):
                                   on_started=client_a_start,
                                   on_state_changed=client_a_state_changed)
 
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
 if __name__ == 'main':
     unittest.main()

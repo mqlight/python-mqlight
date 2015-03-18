@@ -48,8 +48,8 @@ class TestSend(object):
             client.stop()
             test_is_done.set()
         client = mqlight.Client('amqp://host', on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_send_too_many_arguments(self):
         """
@@ -67,8 +67,8 @@ class TestSend(object):
             client.stop()
             test_is_done.set()
         client = mqlight.Client('amqp://host', on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_send_topics(self):
         """
@@ -101,8 +101,8 @@ class TestSend(object):
                 client.stop()
                 test_is_done.set()
         client = mqlight.Client('amqp://host', on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_send_callback(self):
         """
@@ -140,8 +140,8 @@ class TestSend(object):
         client = mqlight.Client('amqp://host',
                                 client_id='test_send_callback',
                                 on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_send_fail_if_stopped(self):
         """
@@ -159,8 +159,8 @@ class TestSend(object):
                 test_is_done.set()
             client.stop(stopped)
         client = mqlight.Client('amqp://host', on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_send_options(self):
         """
@@ -198,8 +198,8 @@ class TestSend(object):
             client.stop()
             test_is_done.set()
         client = mqlight.Client('amqp://host', on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_send_qos(self):
         """
@@ -237,8 +237,8 @@ class TestSend(object):
             client.stop()
             test_is_done.set()
         client = mqlight.Client('amqp://host', on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_send_qos_function(self):
         """
@@ -269,5 +269,5 @@ class TestSend(object):
             client.stop()
             test_is_done.set()
         client = mqlight.Client('amqp://host', on_started=started)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()

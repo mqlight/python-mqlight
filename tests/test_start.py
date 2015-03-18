@@ -118,5 +118,5 @@ class TestStart(object):
         client = mqlight.Client('amqp://host:1234', 'test_start_retry',
                                 on_started=started,
                                 on_state_changed=state_changed)
-        done = test_is_done.wait(self.TEST_TIMEOUT)
-        assert done
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
