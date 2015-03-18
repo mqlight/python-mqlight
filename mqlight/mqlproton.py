@@ -1089,9 +1089,9 @@ class _MQLightSocket(object):
             if tls and security_options.ssl_verify_name:
                 try:
                     match_hostname(self.sock.getpeercert(), address[0])
-                except CertificateError, ce:
+                except CertificateError:
                     raise ssl.SSLError(
-                       'SSL Failure: certificate verify failed')
+                        'SSL Failure: certificate verify failed')
             self.running = True
             self.io_loop = threading.Thread(target=self.loop)
             self.io_loop.daemon = True

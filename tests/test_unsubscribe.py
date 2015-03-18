@@ -79,6 +79,10 @@ class TestUnsubscribe(object):
         """
         test_is_done = threading.Event()
 
+        def on_stopped(err):
+            """client stop callback"""
+            test_is_done.set()
+
         def started(err):
             """started listener"""
             func = Mock()
@@ -95,8 +99,7 @@ class TestUnsubscribe(object):
             client.subscribe('/foo4', 'share')
             client.unsubscribe('/foo4', 'share', {}, on_unsubscribed=func)
 
-            client.stop()
-            test_is_done.set()
+            client.stop(on_stopped=on_stopped)
 
         client = mqlight.Client(
             'amqp://host',
@@ -113,6 +116,10 @@ class TestUnsubscribe(object):
         completes successfully) specifies the right number of arguments.
         """
         test_is_done = threading.Event()
+
+        def on_stopped(err):
+            """client stop callback"""
+            test_is_done.set()
 
         def started(err):
             """started listener"""
@@ -132,8 +139,7 @@ class TestUnsubscribe(object):
                 assert err is None
                 assert topic == '/foo2'
                 assert share == 'share'
-                client.stop()
-                test_is_done.set()
+                client.stop(on_stopped=on_stopped)
 
             def sub2(err, topic, share):
                 """subscribe callback"""
