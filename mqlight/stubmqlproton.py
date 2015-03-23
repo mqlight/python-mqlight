@@ -335,7 +335,7 @@ class _MQLightMessenger(object):
 
 class _MQLightSocket(object):
 
-    def __init__(self, address, tls, security_options, on_read):
+    def __init__(self, address, tls, security_options, on_read, on_close):
         LOG.entry('_MQLightSocket.__init__', NO_CLIENT_ID)
         err = None
         verify = security_options.ssl_verify_name

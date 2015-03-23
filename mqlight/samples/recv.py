@@ -109,9 +109,12 @@ else:
 delay = args.delay
 share = args.share_name
 verbose = args.verbose
+RUNNING = True
 
 
 def close(rc, err=None):
+    global RUNNING
+    RUNNING = False
     if err:
         print('*** error ***', file=sys.stderr)
         print(err, file=sys.stderr)
@@ -213,7 +216,7 @@ try:
 except Exception as exc:
     close(1, exc)
 
-while True:
+while RUNNING:
     try:
         time.sleep(0.5)
     except KeyboardInterrupt:

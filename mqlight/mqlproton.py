@@ -461,7 +461,7 @@ class _MQLightMessenger(object):
         """
         Returns True if the messenger is currently started
         """
-        LOG.entry('_MQLightMessenger._started', NO_CLIENT_ID)
+        LOG.entry('_MQLightMessenger.started', NO_CLIENT_ID)
         if self.messenger is not None:
             started = cproton.pn_messenger_started(self.messenger)
             error = cproton.pn_messenger_errno(self.messenger)
@@ -472,7 +472,7 @@ class _MQLightMessenger(object):
                 _MQLightMessenger._raise_error(text)
         else:
             started = False
-        LOG.exit('_MQLightMessenger._started', NO_CLIENT_ID, started)
+        LOG.exit('_MQLightMessenger.started', NO_CLIENT_ID, started)
         return started
 
     def set_snd_settle_mode(self, mode):
@@ -531,7 +531,7 @@ class _MQLightMessenger(object):
 
         remote_idle_timeout = cproton.pn_messenger_get_remote_idle_timeout(
             self.messenger,
-            address)
+            address) / 1000
         LOG.exit(
             '_MQLightMessenger.get_remote_idle_timeout',
             NO_CLIENT_ID,
@@ -992,17 +992,12 @@ class _MQLightMessenger(object):
 
     def push(self, chunk):
         LOG.entry('_MQLightMessenger.push', NO_CLIENT_ID)
-        LOG.parms(NO_CLIENT_ID, 'chunk:', chunk)
-
         with self._lock:
             if self.messenger and self.connection:
                 pushed = cproton.pn_connection_push(
                     self.connection,
                     chunk,
                     len(chunk))
-                transport = cproton.pn_connection_transport(self.connection)
-                n = cproton.pn_transport_pending(transport)
-                LOG.data(NO_CLIENT_ID, 'after push transport_pending:', n)
             else:
                 # This connection has already been closed, so this data can
                 # never be pushed in, so just return saying it has so the data
@@ -1017,7 +1012,6 @@ class _MQLightMessenger(object):
 
     def _write(self, sock, force):
         LOG.entry_often('_MQLightMessenger._write', NO_CLIENT_ID)
-        LOG.parms(NO_CLIENT_ID, 'sock:', sock)
         LOG.parms(NO_CLIENT_ID, 'force:', force)
 
         with self._lock:
@@ -1038,7 +1032,6 @@ class _MQLightMessenger(object):
                     if self.connection and n > 0:
                         # write n bytes to stream
                         buf = cproton.pn_transport_head(transport, n)
-                        LOG.parms(NO_CLIENT_ID, 'buf:', buf)
                         sent = sock.send(buf)
 
                         closed = cproton.pn_connection_pop(self.connection, n)
@@ -1061,17 +1054,30 @@ class _MQLightMessenger(object):
         self._write(sock, True)
         LOG.exit('_MQLightMessenger.heartbeat', NO_CLIENT_ID, None)
 
+    def closed(self):
+        LOG.entry('_MQLightMessenger.closed', NO_CLIENT_ID)
+        if self.messenger and self.connection:
+            cproton.pn_connection_was_closed(self.messenger, self.connection)
+            error = cproton.pn_messenger_errno(self.messenger)
+            if error:
+                text = cproton.pn_error_text(
+                    cproton.pn_messenger_error(self.messenger))
+                _MQLightMessenger._raise_error(text)
+        LOG.exit('_MQLightMessenger.closed', NO_CLIENT_ID, None)
+
 
 class _MQLightSocket(object):
 
-    def __init__(self, address, tls, security_options, on_read):
+    def __init__(self, address, tls, security_options, on_read, on_close):
         LOG.entry('_MQLightSocket.__init__', NO_CLIENT_ID)
         LOG.parms(NO_CLIENT_ID, 'address:', address)
         LOG.parms(NO_CLIENT_ID, 'tls:', tls)
         LOG.parms(NO_CLIENT_ID, 'security_options:', security_options)
         LOG.parms(NO_CLIENT_ID, 'on_read:', on_read)
+        LOG.parms(NO_CLIENT_ID, 'on_close:', on_close)
         self.running = False
         self.on_read = on_read
+        self.on_close = on_close
         try:
             self.sock = socket.socket(
                 socket.AF_INET,
@@ -1105,23 +1111,29 @@ class _MQLightSocket(object):
     def loop(self):
         LOG.entry('_MQLightSocket.loop', NO_CLIENT_ID)
         while self.running:
-            read, write, exc = select.select([self.sock], [], [])
+            read, write, exc = select.select([self.sock], [], [self.sock])
             if read:
                 data = self.sock.recv(4096)
                 if data:
                     callback = threading.Thread(
                         target=self.on_read, args=(data,))
                     callback.start()
-        if not self.running:
-            self.sock.close()
+                else:
+                    self.running = False
+                    callback = threading.Thread(target=self.on_close)
+                    callback.start()
         LOG.exit('_MQLightSocket.loop', NO_CLIENT_ID, None)
 
     def send(self, msg):
         LOG.entry('_MQLightSocket.send', NO_CLIENT_ID)
-        sent = self.sock.send(msg)
+        if self.sock:
+            sent = self.sock.send(msg)
+        else:
+            sent = 0
         LOG.exit('_MQLightSocket.send', NO_CLIENT_ID, sent)
 
     def close(self):
         LOG.entry('_MQLightSocket.close', NO_CLIENT_ID)
         self.running = False
+        self.sock.close()
         LOG.exit('_MQLightSocket.close', NO_CLIENT_ID, None)

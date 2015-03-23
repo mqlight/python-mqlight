@@ -699,23 +699,21 @@ class Client(object):
                 if previous_active_client._on_state_changed:
                     previous_active_client._on_state_changed(ERROR, err)
 
-                def connect_callback(err):
-                    if on_started:
-                        on_started(err)
-                self._perform_connect(connect_callback, service, True)
+                connect_thread = threading.Thread(
+                    target=self._perform_connect,
+                    args=(on_started, service, True))
+                connect_thread.start()
             previous_active_client.stop(stop_callback)
         else:
             ACTIVE_CLIENTS.add(self)
-
-            def connect_callback(err):
-                if on_started:
-                    on_started(err)
-            self._perform_connect(connect_callback, service, True)
+            connect_thread = threading.Thread(
+                target=self._perform_connect,
+                args=(on_started, service, True))
+            connect_thread.start()
         LOG.exit('Client.__init__', self._id, None)
 
     def _on_read(self, chunk):
         LOG.entry_often('Client._on_read', self._id)
-        LOG.parms(self._id, 'chunk:', chunk)
         # Queue up the chunk
         self._queued_chunks.append(chunk)
         # Small chunks usually indicate something needing immediate
@@ -731,6 +729,27 @@ class Client(object):
                     self._push_chunks)
                 self._push_timeout.start()
         LOG.exit_often('Client._on_read', self._id, None)
+
+    def _on_close(self):
+        LOG.entry('Client._on_close', self._id)
+        self._push_chunks()
+        try:
+            self._messenger.closed()
+        except Exception as exc:
+            LOG.error('Client._on_closed', self._id, exc)
+            LOG.state(
+                'Client._on_close',
+                self._id,
+                ERROR)
+            state_callback = threading.Thread(
+                target=self._on_state_changed,
+                args=(ERROR, exc))
+            state_callback.start()
+
+        # Force any final data from the messenger, which may give it the
+        # chance to close any connections.
+        self._messenger.pop(self._sock, True)
+        LOG.exit('Client._on_close', self._id, None)
 
     def _push_chunks(self):
         LOG.entry('Client._push_chunks', self._id)
@@ -762,7 +781,8 @@ class Client(object):
                         # shortly.
                         self._queued_chunks.append(chunk)
                         self._messenger.pop(self._sock, True)
-                        self._push_chunks()
+                        timer = threading.Timer(0.5, self._push_chunks)
+                        timer.start()
                         LOG.exit('Client._push_chunks', self._id, pushed)
                         return pushed
                     else:
@@ -1494,8 +1514,7 @@ class Client(object):
         if self.is_stopped():
             if callback:
                 LOG.entry('Client._connect_to_service.callback', self._id)
-                callback(
-                    StoppedError('connect aborted due to disconnect'))
+                callback(StoppedError('connect aborted due to disconnect'))
                 LOG.exit('Client._connect_to_service.callback', self._id, None)
             LOG.exit('Client._connect_to_service', self._id, None)
             return
@@ -1542,42 +1561,105 @@ class Client(object):
                     connect_service = service[0:href_length]
                 else:
                     connect_service = service
-
                 address = (connect_url.hostname, connect_url.port)
                 tls = True if service.startswith('amqps') else False
+
                 try:
                     self._sock = _MQLightSocket(
                         address,
                         tls,
                         self._security_options,
-                        self._on_read)
+                        self._on_read,
+                        self._on_close)
                     self._messenger.connect(urlparse(connect_service))
 
-                    # Wait for start
-                    while not self._messenger.started:
+                    # Pass any data to proton.
+                    self._messenger.pop(self._sock, False)
+
+                    # Wait for client to start
+                    while not self._messenger.started():
                         if self.state not in (RETRYING, STARTING):
                             # Don't keep waiting if we're no longer in a
                             # starting state
                             LOG.data(self._id, 'client no longer starting')
                             break
-                        time.sleep(0.05)
+                        time.sleep(0.5)
                     else:
                         connected = True
-                        LOG.data(
-                            self._id,
-                            'successfully connected to:',
-                            log_url)
-                        self._service = self._service_list[i]
 
-                        # Pass any data to proton.
-                        self._messenger.pop(self._sock, False)
-                    break
                 except Exception as exc:
                     error = exc
                     LOG.data(
                         self._id,
                         'failed to connect to: {0} due to error: {1}'.format(
                             log_url, error))
+                if connected:
+                    LOG.data(
+                        self._id,
+                        'successfully connected to:',
+                        log_url)
+                    self._service = self._service_list[i]
+
+                    # Indicate that we're connected
+                    self._set_state(STARTED)
+                    event_to_emit = None
+                    if self._first_start:
+                        event_to_emit = STARTED
+                        self._first_start = False
+                        self._retry_count = 0
+                        LOG.data(self._id, 'first start since being stopped')
+                        self._process_queued_actions()
+                    else:
+                        self._retry_count = 0
+                        event_to_emit = RESTARTED
+                    self._connection_id += 1
+
+                    # Fire callbacks
+                    LOG.state(
+                        'Client._connect_to_service',
+                        self._id,
+                        event_to_emit)
+                    state_callback = threading.Thread(
+                        target=self._on_state_changed,
+                        args=(event_to_emit, None))
+                    state_callback.start()
+                    if callback:
+                        callback_thread = threading.Thread(
+                            target=callback,
+                            args=(None,))
+                        callback_thread.start()
+
+                    # Setup heartbeat timer to ensure that while connected we
+                    # send heartbeat frames to keep the connection alive, when
+                    # required.
+                    timeout = self._messenger.get_remote_idle_timeout(
+                        self._service)
+                    interval = timeout / 2 if timeout > 0 else timeout
+                    LOG.data(self._id, 'heartbeat_interval:', interval)
+                    if interval > 0:
+                        def perform_heartbeat(interval):
+                            LOG.entry(
+                                'Client._connect_to_service.perform_heartbeat',
+                                self._id)
+                            if self._messenger:
+                                self._messenger.heartbeat(self._sock)
+                                self._heartbeat_timeout = threading.Timer(
+                                    interval,
+                                    perform_heartbeat,
+                                    [interval])
+                                self._heartbeat_timeout.daemon = True
+                                self._heartbeat_timeout.start()
+                            LOG.exit(
+                                'Client._connect_to_service.perform_heartbeat',
+                                self._id,
+                                None)
+                        self._heartbeat_timeout = threading.Timer(
+                            interval,
+                            perform_heartbeat,
+                            [interval])
+                        self._heartbeat_timeout.daemon = True
+                        self._heartbeat_timeout.start()
+
             except Exception as exc:
                 # Should never get here, as it means that messenger.connect has
                 # been called in an invalid way, so FFDC
@@ -1589,82 +1671,7 @@ class Client(object):
                     traceback.format_exc())
                 raise MQLightError(exc)
 
-        # If we've successfully connected then we're done, otherwise we'll
-        # retry
-        if connected:
-            # Indicate that we're connected
-            self._set_state(STARTED)
-            event_to_emit = None
-            if self._first_start:
-                event_to_emit = STARTED
-                self._first_start = False
-                self._retry_count = 0
-                # could be queued actions so need to process those here.
-                # On reconnect this would be done via the callback we set,
-                # first connect its the users callback so won't process
-                # anything
-                LOG.data(self._id, 'first start since being stopped')
-                self._process_queued_actions()
-            else:
-                self._retry_count = 0
-                event_to_emit = RESTARTED
-            self._connection_id += 1
-
-            def next_tick():
-                LOG.state(
-                    'Client._connect_to_service.next_tick',
-                    self._id,
-                    event_to_emit)
-                if self._on_state_changed:
-                    self._on_state_changed(event_to_emit, None)
-                if callback:
-                    LOG.entry('Client._connect_to_service.callback2', self._id)
-                    callback(None)
-                    LOG.exit(
-                        'Client._connect_to_service.callback2',
-                        self._id,
-                        None)
-            timer = threading.Timer(0.2, next_tick)
-            timer.start()
-
-            # Setup heartbeat timer to ensure that while connected we send
-            # heartbeat frames to keep the connection alive, when required
-            remote_idle_timeout = self._messenger.get_remote_idle_timeout(
-                self._service)
-            if remote_idle_timeout > 0:
-                heartbeat_interval = remote_idle_timeout / 2000
-            else:
-                heartbeat_interval = remote_idle_timeout / 1000
-            LOG.data(self._id, 'heartbeat_interval:', heartbeat_interval)
-            if heartbeat_interval > 0:
-                def perform_heartbeat(heartbeat_interval):
-                    """
-                    Performs an action on the client to keep the connection
-                    alive
-                    """
-                    LOG.entry(
-                        'Client._connect_to_service.perform_heartbeat',
-                        self._id)
-                    if self._messenger:
-                        self._messenger.heartbeat(self._sock)
-                        self._heartbeat_timeout = threading.Timer(
-                            heartbeat_interval,
-                            perform_heartbeat,
-                            [heartbeat_interval])
-                        self._heartbeat_timeout.daemon = True
-                        self._heartbeat_timeout.start()
-                    LOG.exit(
-                        'Client._connect_to_service.perform_heartbeat',
-                        self._id,
-                        None)
-                self._heartbeat_timeout = threading.Timer(
-                    heartbeat_interval,
-                    perform_heartbeat,
-                    [heartbeat_interval])
-                self._heartbeat_timeout.daemon = True
-                self._heartbeat_timeout.start()
-
-        else:
+        if not connected and self.state not in (STOPPING, STOPPED):
             # We've tried all services without success. Pause for a while
             # before trying again
             self._set_state(RETRYING)
@@ -2407,12 +2414,20 @@ class Client(object):
 
                 def still_subscribing(on_subscribed):
                     LOG.entry('Client.subscribe.still_subscribing', self._id)
+                    err = None
                     try:
                         while not self._messenger.subscribed(address):
-                            time.sleep(0.05)
-                        if credit > 0:
-                            self._messenger.flow(address, credit, self._sock)
-                        finished_subscribing(None, on_subscribed)
+                            if self.state == STOPPED:
+                                err = StoppedError('not started')
+                                break
+                            time.sleep(0.5)
+                        else:
+                            if credit > 0:
+                                self._messenger.flow(
+                                    address,
+                                    credit,
+                                    self._sock)
+                            finished_subscribing(err, on_subscribed)
                     except Exception as exc:
                         LOG.error(
                             'Client.subscribe.still_subscribing',
@@ -2631,18 +2646,23 @@ class Client(object):
         try:
             self._messenger.unsubscribe(address, ttl, self._sock)
 
-            def still_unsubscribing(callback):
+            def still_unsubscribing(on_unsubscribed):
                 LOG.entry('Client.unsubscribe.still_unsubscribing', self._id)
+                err = None
                 try:
                     while not self._messenger.unsubscribed(address):
-                        time.sleep(0.05)
-                    finished_unsubscribing(None, callback)
+                        if self.state == STOPPED:
+                            err = StoppedError('not started')
+                            break
+                        time.sleep(0.5)
+                    else:
+                        finished_unsubscribing(err, on_unsubscribed)
                 except Exception as exc:
                     LOG.error(
                         'Client.unsubscribe.still_unsubscribing',
                         self._id,
                         exc)
-                    finished_unsubscribing(exc, callback)
+                    finished_unsubscribing(exc, on_unsubscribed)
                 LOG.exit(
                     'Client.unsubscribe.still_unsubscribing',
                     self._id,
