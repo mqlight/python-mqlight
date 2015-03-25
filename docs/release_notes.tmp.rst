@@ -20,7 +20,6 @@ Release notes
 9.9.999999999999
 ^^^^^^^^^^^^^^^^
 - AMQPS support
-- Python 3 support
 - Various performance improvements
 
 1.0.2015020201b1

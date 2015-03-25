@@ -22,6 +22,9 @@ from codecs import open as codecs_open
 from os import path, environ
 from platform import system
 
+if not sys.version_info[0] == 2:
+    print('ERROR: Python 3 is not currently supported.')
+    sys.exit(1)
 if not sys.version_info[:2] >= (2, 6):
     print('ERROR: Python 2.6 or newer is required')
     sys.exit(1)
@@ -105,10 +108,7 @@ setup(
         'Operating System :: OS Independent',
         'Programming Language :: Python :: 2',
         'Programming Language :: Python :: 2.6',
-        'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.3',
-        'Programming Language :: Python :: 3.4'
+        'Programming Language :: Python :: 2.7'
     ],
     keywords='ibm mqlight',
     packages=find_packages(
