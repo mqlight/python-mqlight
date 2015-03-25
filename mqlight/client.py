@@ -1095,10 +1095,10 @@ class Client(object):
                     self._process_message(message)
                     if i < (len(messages) - 1):
                         # Unless this is the last pass around the loop, call
-                        # work() so that Messenger has a chance to respond to
+                        # pop() so that Messenger has a chance to respond to
                         # any heartbeat requests that may have arrived from the
                         # server.
-                        self._messenger.work(0)
+                        self._messenger.pop(self._sock, True)
         except Exception as exc:
             LOG.error('Client._check_for_messages', self._id, exc)
 
