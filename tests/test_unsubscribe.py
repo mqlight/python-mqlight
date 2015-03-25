@@ -86,18 +86,22 @@ class TestUnsubscribe(object):
         def started(err):
             """started listener"""
             func = Mock()
-            with pytest.raises(TypeError):
-                client.subscribe('/foo1', 'share')
-                client.unsubscribe('/foo1', 'share', {}, 7)
+            def subscribed1(err, pattern, share):
+                with pytest.raises(TypeError):
+                    client.unsubscribe('/foo1', 'share', {}, on_unsubscribed=7)
+            client.subscribe('/foo1', 'share', on_subscribed=subscribed1)
 
-            client.subscribe('/foo2')
-            client.unsubscribe('/foo2', on_unsubscribed=func)
+            def subscribed2(err, pattern, share):
+                client.unsubscribe('/foo2', on_unsubscribed=func)
+            client.subscribe('/foo2', on_subscribed=subscribed2)
 
-            client.subscribe('/foo3', 'share')
-            client.unsubscribe('/foo3', 'share', on_unsubscribed=func)
+            def subscribed3(err, pattern, share):
+                client.unsubscribe('/foo3', 'share', on_unsubscribed=func)
+            client.subscribe('/foo3', 'share', on_subscribed=subscribed3)
 
-            client.subscribe('/foo4', 'share')
-            client.unsubscribe('/foo4', 'share', {}, on_unsubscribed=func)
+            def subscribed4(err, pattern, share):
+                client.unsubscribe('/foo4', 'share', {}, on_unsubscribed=func)
+            client.subscribe('/foo4', 'share', on_subscribed=subscribed4)
 
             client.stop(on_stopped=on_stopped)
 

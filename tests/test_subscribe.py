@@ -153,6 +153,7 @@ class TestSubscribe(object):
             """stopped listener"""
             with pytest.raises(MQLightError):
                 client.subscribe('/foo')
+                client.stop()
         client.stop(stopped)
 
     def test_subscribe_returns_client(self):
