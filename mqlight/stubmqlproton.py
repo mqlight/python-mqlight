@@ -30,6 +30,7 @@ class _MQLightMessage(object):
     """
     Wrapper for the Proton Message class
     """
+    unit_test_qos = None
 
     def __init__(self, message=None):
         """
@@ -230,15 +231,6 @@ class _MQLightMessenger(object):
         self.remote_idle_timeout = interval
         self.work_callback = callback
 
-    def work(self, timeout):
-        """
-        Sends or receives any outstanding messages
-        """
-        LOG.data(NO_CLIENT_ID, '_MQLightMessenger.work called')
-        if self.work_callback:
-            self.work_callback()
-        return 0
-
     def flow(self, address, credit, sock):
         """
         Process messages based on the number of credit available
@@ -250,6 +242,7 @@ class _MQLightMessenger(object):
         Puts a message on the outgoing queue
         """
         LOG.data(NO_CLIENT_ID, '_MQLightMessenger.put called')
+        msg.unit_test_qos = qos
         return True
 
     def send(self, sock):
@@ -284,11 +277,11 @@ class _MQLightMessenger(object):
         """
         Get the status of a message
         """
-        LOG.data(
-            NO_CLIENT_ID,
-            '_MQLightMessenger.status called',
-            SEND_STATUS)
-        return SEND_STATUS
+        LOG.data(NO_CLIENT_ID, '_MQLightMessenger.status called')
+        result = SEND_STATUS
+        if result == 'SETTLED' and message.unit_test_qos == 0:
+            result = 'UNKNOWN'
+        return result
 
     def subscribe(self, address, qos, ttl, credit, sock):
         """

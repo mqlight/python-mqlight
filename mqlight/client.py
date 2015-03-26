@@ -1837,7 +1837,6 @@ class Client(object):
             raise TypeError('Cannot send no data')
         elif hasattr(data, '__call__'):
             raise TypeError('Cannot send a function')
-        LOG.parms(self._id, 'type(data)', str(type(data)))
         LOG.parms(self._id, 'data:', data)
 
         # Validate the options parameter, when specified
@@ -1967,8 +1966,7 @@ class Client(object):
                                 complete = False
                                 err = None
                                 if in_flight['qos'] == QOS_AT_MOST_ONCE:
-                                    complete = (status == 'UNKNOWN' or
-                                                status == 'SETTLED')
+                                    complete = (status == 'UNKNOWN')
                                 else:
                                     if status in ('ACCEPTED', 'SETTLED'):
                                         self._messenger.settle(
