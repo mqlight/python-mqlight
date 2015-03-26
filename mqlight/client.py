@@ -1468,7 +1468,6 @@ class Client(object):
 
         # Try disconnect again
         timer = threading.Timer(1, self._perform_disconnect, [on_stopped])
-        timer.daemon = True
         timer.start()
         LOG.exit('Client._perform_disconnect', self._id, None)
 
@@ -1498,7 +1497,6 @@ class Client(object):
             timer = threading.Timer(
                 1,
                 self._stop_messenger, [stop_processing_callback, callback])
-            timer.daemon = True
             timer.start()
         LOG.exit('Client._stop_messenger', self._id, None)
 
@@ -1647,7 +1645,6 @@ class Client(object):
                                     interval,
                                     perform_heartbeat,
                                     [interval])
-                                self._heartbeat_timeout.daemon = True
                                 self._heartbeat_timeout.start()
                             LOG.exit(
                                 'Client._connect_to_service.perform_heartbeat',
@@ -1657,7 +1654,6 @@ class Client(object):
                             interval,
                             perform_heartbeat,
                             [interval])
-                        self._heartbeat_timeout.daemon = True
                         self._heartbeat_timeout.start()
 
             except Exception as exc:
@@ -2189,7 +2185,6 @@ class Client(object):
                     if do_reconnect:
                         self._reconnect()
                 timer = threading.Thread(target=immediate)
-                timer.daemon = True
                 timer.start()
 
             self._queued_send_callbacks.append({
@@ -2362,7 +2357,6 @@ class Client(object):
                 callback_thread = threading.Thread(
                     target=callback,
                     args=(err, topic_pattern, original_share_value))
-                callback_thread.daemon = True
                 callback_thread.start()
 
             if err:
@@ -2619,7 +2613,6 @@ class Client(object):
                 callback_thread = threading.Thread(
                     target=callback,
                     args=(err, topic_pattern, original_share_value))
-                callback_thread.daemon = True
                 callback_thread.start()
 
             if err:

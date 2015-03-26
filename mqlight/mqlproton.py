@@ -1100,7 +1100,6 @@ class _MQLightSocket(object):
                         'SSL Failure: certificate verify failed')
             self.running = True
             self.io_loop = threading.Thread(target=self.loop)
-            self.io_loop.daemon = True
             self.io_loop.start()
         except (socket.error, ssl.SSLError) as exc:
             LOG.error('_MQLightSocket.__init__', NO_CLIENT_ID, exc)
