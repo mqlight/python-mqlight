@@ -2617,7 +2617,7 @@ class Client(object):
                 LOG.error('Client.subscribe', self._id, err)
                 if self._on_state_changed:
                     self._on_state_changed(ERROR, err)
-                if _should_reconnect(exc):
+                if _should_reconnect(err):
                     queue_unsubscribe()
                     self._reconnect()
             else:

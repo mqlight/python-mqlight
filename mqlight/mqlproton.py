@@ -898,7 +898,7 @@ class _MQLightMessenger(object):
         expiry_policy = cproton.pn_terminus_get_expiry_policy(
             cproton.pn_link_target(link))
         timeout = cproton.pn_terminus_get_timeout(cproton.pn_link_target(link))
-        if expiry_policy == cproton.PN_NEVER or timeout > 0:
+        if expiry_policy == cproton.PN_EXPIRE_NEVER or timeout > 0:
             closing = False
         LOG.data(NO_CLIENT_ID, 'closing:', closing)
 
@@ -938,7 +938,7 @@ class _MQLightMessenger(object):
         expiry_policy = cproton.pn_terminus_get_expiry_policy(
             cproton.pn_link_target(link))
         timeout = cproton.pn_terminus_get_timeout(cproton.pn_link_target(link))
-        if expiry_policy == cproton.PN_NEVER or timeout > 0:
+        if expiry_policy == cproton.PN_EXPIRE_NEVER or timeout > 0:
             closing = False
         LOG.data(NO_CLIENT_ID, 'closing:', closing)
 
