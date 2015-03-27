@@ -163,9 +163,13 @@ def send_messages():
     """
     Sends the next message
     """
+    wait = False
     while messages:
-        if delay > 0:
-            time.sleep(delay)
+        if wait:
+            if delay > 0:
+                time.sleep(delay)
+        else:
+            wait = True
         send_message()
 
 
