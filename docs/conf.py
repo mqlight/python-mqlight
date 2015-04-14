@@ -27,6 +27,9 @@ if os.getenv('BROOT') is not None:
     sys.path.append(
         '{0}/appmsging/python/mqlight/build/lib.{1}-{2}'.format(
             os.environ['BROOT'], get_platform(), sys.version[0:3]))
+    sys.path.append(
+        '{0}/appmsging/python/mqlight/build/lib.{1}-{2}/mqlight'.format(
+            os.environ['BROOT'], get_platform(), sys.version[0:3]))
 
 # -- General configuration ------------------------------------------------
 
