@@ -34,7 +34,6 @@ import time
 from json import loads
 from random import random
 from pkg_resources import get_distribution, DistributionNotFound
-import ssl
 try:
     import httplib
     from urlparse import urlparse
@@ -45,7 +44,7 @@ except ImportError:
     from urllib.parse import quote
 from .exceptions import MQLightError, InvalidArgumentError, RangeError, \
     NetworkError, NotPermittedError, ReplacedError, LocalReplacedError, \
-    StoppedError, SubscribedError, UnsubscribedError, SecurityError
+    StoppedError, SubscribedError, UnsubscribedError
 from .logging import get_logger, NO_CLIENT_ID
 
 CMD = ' '.join(sys.argv)
@@ -1123,7 +1122,9 @@ class Client(object):
         msg.connection_id = self._connection_id
 
         data = msg.body
-        topic = urlparse(msg.address).path[1:]
+        topic = msg.address
+        if topic.startswith('amqp://'):
+            topic = topic[topic.index('/', 7) + 1:]
         auto_confirm = True
         qos = QOS_AT_MOST_ONCE
 
@@ -1585,12 +1586,9 @@ class Client(object):
                         time.sleep(0.5)
                     else:
                         connected = True
+
                 except Exception as exc:
-                    if isinstance(exc, ssl.SSLError):
-                        error = SecurityError("SSL Failure: certificate \
-                        verify failed")
-                    else:
-                        error = exc
+                    error = exc
                     LOG.data(
                         self._id,
                         'failed to connect to: {0} due to error: {1}'.format(
@@ -1903,15 +1901,7 @@ class Client(object):
         in_outstanding_sends = False
         try:
             msg = _MQLightMessage()
-            address = self.get_service()
-            if topic:
-                # need to encode the topic component but / has meaning that
-                # shouldn't be encoded
-                topic_levels = topic.split('/')
-                encoded_topic_levels = [quote(x) for x in topic_levels]
-                encoded_topic = '/'.join(encoded_topic_levels)
-                address += '/' + encoded_topic
-                msg.address = address
+            msg.address = self.get_service() + '/' + topic
             if ttl:
                 msg.ttl = ttl
 
