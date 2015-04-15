@@ -34,6 +34,7 @@ import time
 from json import loads
 from random import random
 from pkg_resources import get_distribution, DistributionNotFound
+import ssl
 try:
     import httplib
     from urlparse import urlparse
@@ -44,7 +45,7 @@ except ImportError:
     from urllib.parse import quote
 from .exceptions import MQLightError, InvalidArgumentError, RangeError, \
     NetworkError, NotPermittedError, ReplacedError, LocalReplacedError, \
-    StoppedError, SubscribedError, UnsubscribedError
+    StoppedError, SubscribedError, UnsubscribedError, SecurityError
 from .logging import get_logger, NO_CLIENT_ID
 
 CMD = ' '.join(sys.argv)
@@ -1586,9 +1587,11 @@ class Client(object):
                         time.sleep(0.5)
                     else:
                         connected = True
-
                 except Exception as exc:
-                    error = exc
+                    if isinstance(exc, ssl.SSLError):
+                        error = SecurityError(exc.strerror)
+                    else:
+                        error = exc
                     LOG.data(
                         self._id,
                         'failed to connect to: {0} due to error: {1}'.format(
