@@ -1325,7 +1325,6 @@ class Client(object):
                 traceback.print_exc(file=sys.stderr)
                 os._exit(1)
 
-
         if self.is_stopped():
             LOG.debug(
                 self._id,
