@@ -1310,7 +1310,21 @@ class Client(object):
             state,
             data,
             delivery)
-        subscription['on_message'](state, data, delivery)
+        try:
+            if subscription['on_message']:
+                subscription['on_message'](state, data, delivery)
+        except StandardError as err:
+            LOG.error(
+                'Client._process_message',
+                self._id,
+                err)
+            if self._on_state_changed:
+                self._on_state_changed(ERROR, err)
+            else:
+                # XXX: if user hasn't set an error handler, print and exit?
+                traceback.print_exc(file=sys.stderr)
+                os._exit(1)
+
 
         if self.is_stopped():
             LOG.debug(
