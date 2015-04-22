@@ -78,7 +78,7 @@ class _MQLightMessage(object):
                 cproton.pn_message_set_format(self._msg, cproton.PN_DATA)
                 cproton.pn_message_load_data(
                     self._msg,
-                    ''.join(str(i) for i in value))
+                    ''.join(chr(i % 256) for i in value))
             self._body = self._get_body()
             LOG.data(NO_CLIENT_ID, 'body:', self._body)
         LOG.exit('_MQLightMessage._set_body', NO_CLIENT_ID, None)
@@ -96,10 +96,6 @@ class _MQLightMessage(object):
                 cproton.pn_data_next(body)
                 data_type = cproton.pn_data_type(body)
                 LOG.data(NO_CLIENT_ID, 'data_type:', data_type)
-                if data_type == cproton.PN_STRING:
-                    cproton.pn_message_set_format(self._msg, cproton.PN_TEXT)
-                else:
-                    cproton.pn_message_set_format(self._msg, cproton.PN_DATA)
 
                 size = 16
                 while True:
@@ -109,6 +105,11 @@ class _MQLightMessage(object):
                         continue
                     else:
                         break
+                if data_type == cproton.PN_STRING:
+                    cproton.pn_message_set_format(self._msg, cproton.PN_TEXT)
+                else:
+                    cproton.pn_message_set_format(self._msg, cproton.PN_DATA)
+                    result = [ord(byte) for byte in list(result)]
             else:
                 result = self._body
         LOG.exit('_MQLightMessage._get_body', NO_CLIENT_ID, result)
