@@ -28,6 +28,8 @@ import threading
 import os.path
 import re
 import sys
+reload(sys)  
+sys.setdefaultencoding('utf8')
 import codecs
 import traceback
 import time
