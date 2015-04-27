@@ -793,7 +793,7 @@ class Client(object):
                         self._messenger.pop(self._sock, False)
 
                     # Remove the pushed part of the chunk.
-                    chunk = chunk.slice(written)
+                    chunk = chunk[:-written]
                 else:
                     # This chunk has been fully dealt with.
                     pushed += written
