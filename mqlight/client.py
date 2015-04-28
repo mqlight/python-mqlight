@@ -28,8 +28,6 @@ import threading
 import os.path
 import re
 import sys
-reload(sys)  
-sys.setdefaultencoding('utf8')
 import codecs
 import traceback
 import time
@@ -61,6 +59,8 @@ else:
         _MQLightSocket, QOS_AT_MOST_ONCE, QOS_AT_LEAST_ONCE
     # The connection retry interval in seconds
     CONNECT_RETRY_INTERVAL = 10
+reload(sys)
+sys.setdefaultencoding('utf8')
 
 try:
     __version__ = get_distribution('mqlight').version
