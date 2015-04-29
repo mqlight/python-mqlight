@@ -2289,7 +2289,7 @@ class Client(object):
                             options['auto_confirm']))
             if 'ttl' in options:
                 try:
-                    ttl = int(options['ttl'])
+                    ttl = int(options['ttl']//1000)
                     if ttl < 0:
                         raise TypeError()
                 except Exception as err:

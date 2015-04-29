@@ -146,7 +146,7 @@ def subscribe(err):
         'auto_confirm': False
     }
     if args.destination_ttl is not None:
-        options['ttl'] = args.destination_ttl
+        options['ttl'] = args.destination_ttl*1000
     if args.delay is not None and args.delay > 0:
         options['credit'] = 1
     client.subscribe(
