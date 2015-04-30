@@ -1604,7 +1604,7 @@ class Client(object):
                         connected = True
                 except Exception as exc:
                     if isinstance(exc, ssl.SSLError):
-                        error = SecurityError(exc.strerror)
+                        error = SecurityError(exc)
                     else:
                         error = exc
                     LOG.data(
