@@ -2363,12 +2363,6 @@ class Client(object):
             LOG.parms(self._id, 'err:', err)
             LOG.parms(self._id, 'callback:', callback)
 
-            if callback:
-                callback_thread = threading.Thread(
-                    target=callback,
-                    args=(err, topic_pattern, original_share_value))
-                callback_thread.start()
-
             if err:
                 LOG.error('Client.subscribe', self._id, err)
                 if self._on_state_changed:
@@ -2405,6 +2399,12 @@ class Client(object):
                     'unconfirmed': 0,
                     'confirmed': 0
                 })
+
+            if callback:
+                callback_thread = threading.Thread(
+                    target=callback,
+                    args=(err, topic_pattern, original_share_value))
+                callback_thread.start()
             LOG.exit('Client.subscribe.finished_subscribing', self._id, None)
 
         if err is None:
@@ -2619,12 +2619,6 @@ class Client(object):
             LOG.parms(self._id, 'err:', err)
             LOG.parms(self._id, 'callback:', callback)
 
-            if callback:
-                callback_thread = threading.Thread(
-                    target=callback,
-                    args=(err, topic_pattern, original_share_value))
-                callback_thread.start()
-
             if err:
                 LOG.error('Client.subscribe', self._id, err)
                 if self._on_state_changed:
@@ -2640,6 +2634,12 @@ class Client(object):
                             'share'] == original_share_value:
                         self._subscriptions.remove(sub)
                         break
+
+            if callback:
+                callback_thread = threading.Thread(
+                    target=callback,
+                    args=(err, topic_pattern, original_share_value))
+                callback_thread.start()
             LOG.exit(
                 'Client.unsubscribe.finished_unsubscribing',
                 self._id,
