@@ -200,7 +200,8 @@ def _should_reconnect(error):
         ReplacedError,
         StoppedError,
         SubscribedError,
-        UnsubscribedError)
+        UnsubscribedError,
+        MQLightError)
     LOG.exit('_should_reconnect', NO_CLIENT_ID, result)
     return result
 
