@@ -176,9 +176,10 @@ def message(message_type, data, delivery):
     Message callback
     """
     if message_type == mqlight.MALFORMED:
-        print('*** received malformed message ***', file=sys.stderr)
-        print('data: {0}'.format(data), file=sys.stderr)
-        print('delivery: {0}'.format(delivery), file=sys.stderr)
+        malformed_message = '*** received malformed message ***'
+        +"\n"+'data: {0}'.format(data)
+        +"\n"+'delivery: {0}'.format(delivery)
+        print(malformed_message, file=sys.stderr)
     else:
         global COUNT
         COUNT += 1
@@ -191,9 +192,9 @@ def message(message_type, data, delivery):
             delivery['message']['confirm_delivery']()
             client.stop()
         else:
-            print('{0}{1}'.format(
+            print('{0}{1}\n'.format(
                 data[:50],
-                (' ...' if len(data) > 50 else '')))
+                (' ...' if len(data) > 50 else '')), end="")
             if verbose:
                 print(delivery)
             if delay > 0:

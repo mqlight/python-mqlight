@@ -228,9 +228,9 @@ def sent(err, topic, data, options):
         close(1, 'Problem with send request: {0}'.format(err))
     else:
         if data:
-            print('{0}{1}'.format(
+            print('{0}{1}\n'.format(
                 data[:50],
-                (' ...' if len(data) > 50 else '')))
+                (' ...' if len(data) > 50 else '')), end="")
     # No more pending messages, stop the client
     if PENDING == 0:
         client.stop()
