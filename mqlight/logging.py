@@ -105,6 +105,8 @@ class MQLightLog(object):
         self._log = logging.getLogger(name)
         self._level = LEVELS.get(
             os.getenv('MQLIGHT_PYTHON_LOG', DEFAULT_LEVEL).upper())
+        if self._level is None:
+            self._level = FFDC
         self._ffdc_sequence = 0
         self._stack = DEFAULT_STACK
 
