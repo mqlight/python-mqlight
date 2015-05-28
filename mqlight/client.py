@@ -2231,11 +2231,21 @@ class Client(object):
 
         :param topic_pattern: The topic to subscribe to.
         :param share: The share name of the subscription.
-        :param options: Two valid options. "qos" specifies the
-            quality of service. This can be 1 for at-least-once, ; or
-            0 for at-most-once, where no callback is triggered. "ttl" specifies
-            the time-to-live of the subscription in seconds, which is how long
-            the subscription will persist before being destroyed.
+        :param options: Four valid options. "qos" specifies the quality of
+            service. This can be 1 for at-least-once, or 0 for at-most-once,
+            where no callback is triggered. "ttl" specifies the time-to-live
+            of the subscription in seconds, which is how long the subscription
+            will persist before being destroyed. "credit" specifies the link
+            credit: the number of messages that can be sent before the server
+            stops delivering messages to the subscription. This credit is then
+            recovered by confirming messages. Default value is 1024, and if
+            set to 0 no messages will be received by this subscription. For qos
+            0, messages are automatically confirmed (settled). For qos 1,
+            confirmation happens automatically if "auto_confirm" is True.
+            "auto_confirm" is True by default. If set to false, the client must
+            manually confirm messages in order to recover link credit and
+            receive more messages once it has run out. "auto_confirm" has no
+            effect if qos is 0.
         :param on_subscribed: A function to call when the subscription is done.
             This function prototype must be ``func(err, pattern, share)`` where
             ``err`` is ``None`` if the client subscribed successfully otherwise
@@ -2486,7 +2496,7 @@ class Client(object):
             previous call to subscribe.
         :param share: (optional) the share that was supplied in the previous
             call to subscribe.
-        :param options: (optional) if specified, 'ttl' will override the
+        :param options: (optional) 'ttl', if specified, will override the
             existing value for this subscription.
         :param on_unsubscribed: (optional) Invoked if the unsubscribe request
             has been processed successfully.
