@@ -502,8 +502,10 @@ class Client(object):
             instance to establish its connection is disconnected in favour
             of the second instance. If this property is not specified then
             the Client will generate a probabilistically unique ID.
-        :param security_options: (optional) Any required security options for
-            user name/password authentication and SSL.
+        :param security_options: (optional) A dictionary that can have the
+            the following keys: "user", "password" (for SASL authentication);
+            "sslTrustCertificate" specifying the path to the certificate file,
+            and sslVerifyName which is a boolean.
         :param on_started: (optional) A function to be called when the Client
             reaches the started state. This function prototype must be
             ``func(err)`` where ``err`` is ``None`` if the client started
@@ -1825,7 +1827,13 @@ class Client(object):
 
         :param topic: Topic of the message.
         :param data: Body of the message.
-        :param options: (optional) Message attributes.
+        :param options: (optional) Two valid options. "qos" specifies the
+            quality of service. This can be 1 for at-least-once, where the
+            client can provide a callback that gets called on confirmation of
+            a send; or 0 for at-most-once, where no callback is triggered.
+            "ttl" specifies the time-to-live of the message in seconds, which
+            is how long the message will persist if sent to a topic that has a
+            subscription that hasn't expired.
         :param on_sent: (optional) A function to call when the message is sent
             This function prototype must be ``func(err, topic, data, options)``
             where ``err`` is ``None`` if the message was sent correctly,
@@ -2223,7 +2231,11 @@ class Client(object):
 
         :param topic_pattern: The topic to subscribe to.
         :param share: The share name of the subscription.
-        :param options: Subscription attributes.
+        :param options: Two valid options. "qos" specifies the
+            quality of service. This can be 1 for at-least-once, ; or
+            0 for at-most-once, where no callback is triggered. "ttl" specifies
+            the time-to-live of the subscription in seconds, which is how long
+            the subscription will persist before being destroyed.
         :param on_subscribed: A function to call when the subscription is done.
             This function prototype must be ``func(err, pattern, share)`` where
             ``err`` is ``None`` if the client subscribed successfully otherwise
@@ -2474,7 +2486,8 @@ class Client(object):
             previous call to subscribe.
         :param share: (optional) the share that was supplied in the previous
             call to subscribe.
-        :param options: (optional) Unsubscription attributes.
+        :param options: (optional) if specified, 'ttl' will override the
+            existing value for this subscription.
         :param on_unsubscribed: (optional) Invoked if the unsubscribe request
             has been processed successfully.
             This function prototype must be ``func(err, pattern, share)``
