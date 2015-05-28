@@ -645,9 +645,9 @@ class _MQLightMessenger(object):
         LOG.data(NO_CLIENT_ID, 'messages count: {0}'.format(count))
         while cproton.pn_messenger_incoming(self.messenger) > 0:
             message = cproton.pn_message()
-            no_msg = cproton.pn_messenger_get(self.messenger, message)
-            # discard message if it is blank
-            if no_msg == cproton.PN_EOS:
+            rc = cproton.pn_messenger_get(self.messenger, message)
+            # try again if message not yet available on incoming queue
+            if rc == cproton.PN_EOS:
                 continue
             error = cproton.pn_messenger_errno(self.messenger)
             if error:
