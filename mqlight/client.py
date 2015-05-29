@@ -1953,7 +1953,7 @@ class Client(object):
             self._messenger.put(msg, qos)
             self._messenger.send(self._sock)
 
-            if len(self._outstanding_sends) == 1:
+            if len(self._outstanding_sends) >= 1:
                 def send_outbound_msg():
                     LOG.entry_often('Client.send.send_outbound_msg', self._id)
                     LOG.data(
