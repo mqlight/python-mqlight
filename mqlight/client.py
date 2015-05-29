@@ -1207,7 +1207,8 @@ class Client(object):
                 # everything
                 available = sub['credit'] - sub['unconfirmed']
                 to_confirm = sub['unconfirmed'] == 0 and sub['confirmed'] > 0
-                if available / sub['confirmed'] <= 1.25 or to_confirm:
+                if (sub['confirmed'] and available / sub['confirmed'] <=
+                        1.25) or to_confirm:
                     self._messenger.flow(
                         self._service + '/' + msg.link_address,
                         sub['confirmed'],
@@ -1355,8 +1356,9 @@ class Client(object):
                 # everything.
                 available = subscription['credit'] - \
                     subscription['unconfirmed']
-                if available / subscription[
-                    'confirmed'] <= 1.25 or (subscription[
+                if (subscription['confirmed'] and
+                        available / subscription[
+                        'confirmed'] <= 1.25) or (subscription[
                         'unconfirmed'] == 0 and subscription[
                         'confirmed'] > 0):
                     self._messenger.flow(
