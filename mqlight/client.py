@@ -1982,9 +1982,16 @@ class Client(object):
                                 'length:',
                                 len(self._outstanding_sends))
                             while self._outstanding_sends:
-                                in_flight = self._outstanding_sends[0:1][0]
-                                status = str(self._messenger.status(
-                                    in_flight['msg']))
+                                in_flight = self._outstanding_sends[:1][0]
+                                try:
+                                    status = str(self._messenger.status(
+                                        in_flight['msg']))
+                                # we get a TypeError because a tracker
+                                # hasn't been set on the message yet,
+                                # so skip and try again
+                                except TypeError:
+                                        time.sleep(0.1)
+                                        continue
                                 LOG.data(self._id, 'status:', status)
                                 complete = False
                                 err = None
