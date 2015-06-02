@@ -642,6 +642,8 @@ class Client(object):
         self._queued_chunks = []
         self._push_timeout = None
 
+        self._connect_thread = None
+
         # Set the initial state to starting
         self._state = STARTING
         self._service = None
@@ -705,17 +707,17 @@ class Client(object):
                 if previous_active_client._on_state_changed:
                     previous_active_client._on_state_changed(ERROR, err)
 
-                connect_thread = threading.Thread(
+                self._connect_thread = threading.Thread(
                     target=self._perform_connect,
                     args=(on_started, service, True))
-                connect_thread.start()
+                self._connect_thread.start()
             previous_active_client.stop(stop_callback)
         else:
             ACTIVE_CLIENTS.add(self)
-            connect_thread = threading.Thread(
+            self._connect_thread = threading.Thread(
                 target=self._perform_connect,
                 args=(on_started, service, True))
-            connect_thread.start()
+            self._connect_thread.start()
         LOG.exit('Client.__init__', self._id, None)
 
     def _on_read(self, chunk):
@@ -1402,7 +1404,8 @@ class Client(object):
                 LOG.exit('Client.stop.on_stopped', self._id, None)
             LOG.exit('Client.stop', self._id, self)
             return self
-
+        if self._connect_thread:
+            self._connect_thread.join(1)
         self._perform_disconnect(on_stopped)
         LOG.exit('Client.stop', self._id, self)
         return self
