@@ -992,7 +992,8 @@ class Client(object):
                     err)
                 if previous_client._on_state_changed:
                     previous_client._on_state_changed(ERROR, err)
-                self._perform_connect(on_started, self._service_param, False)
+                self._connect_thread = self._perform_connect(
+                    on_started, self._service_param, False)
             previous_client.stop(stop_callback)
         else:
             ACTIVE_CLIENTS.add(self)
@@ -1404,8 +1405,6 @@ class Client(object):
                 LOG.exit('Client.stop.on_stopped', self._id, None)
             LOG.exit('Client.stop', self._id, self)
             return self
-        if self._connect_thread:
-            self._connect_thread.join(1)
         self._perform_disconnect(on_stopped)
         LOG.exit('Client.stop', self._id, self)
         return self
@@ -1417,6 +1416,10 @@ class Client(object):
         LOG.entry('Client._perform_disconnect', self._id)
         LOG.parms(NO_CLIENT_ID, 'on_stopped:', on_stopped)
         self._set_state(STOPPING)
+        if self._connect_thread:
+            self._connect_thread.join(1)
+        if self._retry_timer:
+            self._retry_timer.join(1)
 
         # Only disconnect when all outstanding send operations are complete
         if not self._outstanding_sends:
