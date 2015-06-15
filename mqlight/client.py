@@ -478,6 +478,223 @@ class Client(object):
     The Client class represents an MQLight client instance.
     """
 
+    # wrapper function that does most of the client setup
+    # so that an instance is returned before callbacks are
+    # issued, in case a client method is called in one 
+    # before the __init__ returns with the client instance.
+    def _complete_init(__init__):
+        def wrapper(
+                self,
+                service,
+                client_id=None,
+                security_options=None,
+                on_started=None,
+                on_state_changed=None):
+            __init__(
+                self,
+                service,
+                client_id=None,
+                security_options=None,
+                on_started=None,
+                on_state_changed=None)
+
+            # Ensure the service is a list or function
+            service_function = None
+            if hasattr(service, '__call__'):
+                service_function = service
+            elif isinstance(service, str):
+                service_url = urlparse(service)
+                if service_url.scheme in ('http', 'https'):
+                    service_function = _get_http_service_function(
+                        service, service_url)
+                elif service_url.scheme == 'file':
+                    if (service_url.hostname and
+                            service_url.hostname != 'localhost'):
+                        error = InvalidArgumentError(
+                            'service contains unsupported file URI of {0}'
+                            ', only file:///path or file://localhost/path are '
+                            ' supported.'.format(service))
+                        LOG.error('Client.__init__', NO_CLIENT_ID, error)
+                        raise error
+                    service_function = _get_file_service_function(
+                        service_url.path)
+
+            # If client id has not been specified then generate an id
+            if client_id is None:
+                client_id = 'AUTO_' + str(uuid.uuid4()).replace('-', '_')[0:7]
+            LOG.data('client_id', client_id)
+            client_id = str(client_id)
+
+            # If the client id is incorrectly formatted then throw an error
+            if len(client_id) > 48:
+                error = InvalidArgumentError(
+                    'Client identifier {0} is longer than the maximum ID '
+                    'length of 48'.format(client_id))
+                LOG.error('Client.__init__', NO_CLIENT_ID, error)
+                raise error
+
+            # If client id is not a string then throw an error
+            if not isinstance(client_id, str):
+                error = TypeError('Client identifier must be a str')
+                LOG.error('Client.__init__', NO_CLIENT_ID, error)
+                raise error
+
+            # currently client ids are restricted, reject any invalid ones
+            matches = re.search(INVALID_CLIENT_ID_REGEX, client_id)
+            if matches is not None:
+                error = InvalidArgumentError(
+                    'Client Identifier {0} contains invalid char: {1}'.format(
+                        client_id, matches.group(0)))
+                LOG.error('Client.__init__', NO_CLIENT_ID, error)
+                raise error
+
+            # User/password must either both be present, or both be absent.
+            if security_options:
+                if isinstance(security_options, dict):
+                    s_o = SecurityOptions(security_options)
+                    # User/password must either both be present,
+                    # or both be absent.
+                    if (s_o.property_user and s_o.property_password is None
+                        ) or (s_o.property_user is None and
+                              s_o.property_password):
+                        error = InvalidArgumentError(
+                            'both user and password properties must be '
+                            'specified together')
+                        LOG.error('Client.__init__', NO_CLIENT_ID, error)
+                        raise error
+                else:
+                    error = TypeError('security_options must be a dict')
+                    LOG.error('Client.__init__', NO_CLIENT_ID, error)
+                    raise error
+
+                # Validate the ssl security options
+                if s_o.ssl_verify_name:
+                    if s_o.ssl_verify_name not in [True, False]:
+                        error = InvalidArgumentError(
+                            'ssl_verify_name value {0} is invalid. '
+                            'Must evaluate to True of False'.format(
+                                s_o.ssl_verify_name))
+                        LOG.error('Client.__init__', NO_CLIENT_ID, error)
+                        raise error
+                if s_o.ssl_trust_certificate:
+                    if not isinstance(s_o.ssl_trust_certificate, str):
+                        error = TypeError(
+                            'ssl_trust_certificate value {0} is invalid. Must '
+                            'be a string'.format(s_o.ssl_trust_certificate))
+                        LOG.error('Client.__init__', NO_CLIENT_ID, error)
+                        raise error
+                    if not os.path.isfile(s_o.ssl_trust_certificate):
+                        error = TypeError(
+                            'The file specified for ssl_trust_certificate '
+                            'is not a regular file')
+                        LOG.error('Client.__init__', NO_CLIENT_ID, error)
+                        raise error
+            else:
+                s_o = SecurityOptions({})
+
+            if on_started and not hasattr(on_started, '__call__'):
+                error = TypeError('on_started must be a function')
+                LOG.error('Client.__init__', NO_CLIENT_ID, error)
+                raise error
+
+            if on_state_changed and not hasattr(on_state_changed, '__call__'):
+                error = TypeError('on_state_changed must be a function')
+                LOG.error('Client.__init__', NO_CLIENT_ID, error)
+                raise error
+
+            # Save the required data as client fields
+            self._service_function = service_function
+            self._service_list = None
+            self._service_param = service
+            self._id = client_id
+            self._security_options = s_o
+
+            self._messenger = _MQLightMessenger(self._id)
+            self._sock = None
+
+            self._queued_chunks = []
+            self._push_timeout = None
+
+            self._connect_thread = None
+
+            # Set the initial state to starting
+            self._state = STARTING
+            self._service = None
+            # The first start, set to False after start and back to True
+            # on stop
+            self._first_start = True
+
+            # List of message subscriptions
+            self._subscriptions = []
+            self._queued_subscriptions = []
+            self._queued_unsubscribes = []
+
+            # List of outstanding send operations waiting to be accepted,
+            # settled, etc by the listener
+            self._outstanding_sends = []
+
+            # List of queued sends for resending on a reconnect
+            self._queued_sends = []
+            # List of callbacks to notify when a send operation completes
+            self._queued_send_callbacks = []
+
+            # An identifier for the connection
+            self._connection_id = 0
+
+            # Connection retry timer
+            self._retry_timer = None
+
+            # Heartbeat
+            self._heartbeat_timeout = None
+
+            # callbacks
+            self._on_started = on_started
+            self._on_stopped = None
+            self._on_state_changed = on_state_changed
+
+            # No drain event initially required
+            self._on_drain_required = False
+
+            # Number of attempts the client has tried to reconnect
+            self._retry_count = 0
+
+            if service_function is None:
+                self._service_list = _generate_service_list(
+                    service,
+                    self._security_options)
+            # Check that the id for this instance is not already in use. If it
+            # is then we need to stop the active instance before starting
+            if ACTIVE_CLIENTS.has(self._id):
+                LOG.data(
+                    self._id,
+                    'stopping previously active client with same client id')
+                previous_active_client = ACTIVE_CLIENTS.get(self._id)
+                ACTIVE_CLIENTS.add(self)
+
+                def stop_callback(err):
+                    LOG.data(
+                        self._id,
+                        'stopped previously active client with same client id')
+                    err = LocalReplacedError()
+                    LOG.error('Client.__init__', self._id, err)
+                    if previous_active_client._on_state_changed:
+                        previous_active_client._on_state_changed(ERROR, err)
+
+                    self._connect_thread = threading.Thread(
+                        target=self._perform_connect,
+                        args=(on_started, service, True))
+                    self._connect_thread.start()
+                previous_active_client.stop(stop_callback)
+            else:
+                ACTIVE_CLIENTS.add(self)
+                self._connect_thread = threading.Thread(
+                    target=self._perform_connect,
+                    args=(on_started, service, True))
+                self._connect_thread.start()
+            LOG.exit('Client.__init__', self._id, None)
+        return wrapper
+
+    @_complete_init
     def __init__(
             self,
             service,
@@ -527,198 +744,6 @@ class Client(object):
         LOG.parms(NO_CLIENT_ID, 'security_options:', security_options)
         LOG.parms(NO_CLIENT_ID, 'on_started:', on_started)
         LOG.parms(NO_CLIENT_ID, 'on_state_changed:', on_state_changed)
-
-        # Ensure the service is a list or function
-        service_function = None
-        if hasattr(service, '__call__'):
-            service_function = service
-        elif isinstance(service, str):
-            service_url = urlparse(service)
-            if service_url.scheme in ('http', 'https'):
-                service_function = _get_http_service_function(
-                    service, service_url)
-            elif service_url.scheme == 'file':
-                if (service_url.hostname and
-                        service_url.hostname != 'localhost'):
-                    error = InvalidArgumentError(
-                        'service contains unsupported file URI of {0}'
-                        ', only file:///path or file://localhost/path are '
-                        ' supported.'.format(service))
-                    LOG.error('Client.__init__', NO_CLIENT_ID, error)
-                    raise error
-                service_function = _get_file_service_function(service_url.path)
-
-        # If client id has not been specified then generate an id
-        if client_id is None:
-            client_id = 'AUTO_' + str(uuid.uuid4()).replace('-', '_')[0:7]
-        LOG.data('client_id', client_id)
-        client_id = str(client_id)
-
-        # If the client id is incorrectly formatted then throw an error
-        if len(client_id) > 48:
-            error = InvalidArgumentError(
-                'Client identifier {0} is longer than the maximum ID length '
-                'of 48'.format(client_id))
-            LOG.error('Client.__init__', NO_CLIENT_ID, error)
-            raise error
-
-        # If client id is not a string then throw an error
-        if not isinstance(client_id, str):
-            error = TypeError('Client identifier must be a str')
-            LOG.error('Client.__init__', NO_CLIENT_ID, error)
-            raise error
-
-        # currently client ids are restricted, reject any invalid ones
-        matches = re.search(INVALID_CLIENT_ID_REGEX, client_id)
-        if matches is not None:
-            error = InvalidArgumentError(
-                'Client Identifier {0} contains invalid char: {1}'.format(
-                    client_id, matches.group(0)))
-            LOG.error('Client.__init__', NO_CLIENT_ID, error)
-            raise error
-
-        # User/password must either both be present, or both be absent.
-        if security_options:
-            if isinstance(security_options, dict):
-                s_o = SecurityOptions(security_options)
-                # User/password must either both be present, or both be absent.
-                if (s_o.property_user and s_o.property_password is None) or (
-                        s_o.property_user is None and s_o.property_password):
-                    error = InvalidArgumentError(
-                        'both user and password properties must be '
-                        'specified together')
-                    LOG.error('Client.__init__', NO_CLIENT_ID, error)
-                    raise error
-            else:
-                error = TypeError('security_options must be a dict')
-                LOG.error('Client.__init__', NO_CLIENT_ID, error)
-                raise error
-
-            # Validate the ssl security options
-            if s_o.ssl_verify_name:
-                if s_o.ssl_verify_name not in [True, False]:
-                    error = InvalidArgumentError(
-                        'ssl_verify_name value {0} is invalid. '
-                        'Must evaluate to True of False'.format(
-                            s_o.ssl_verify_name))
-                    LOG.error('Client.__init__', NO_CLIENT_ID, error)
-                    raise error
-            if s_o.ssl_trust_certificate:
-                if not isinstance(s_o.ssl_trust_certificate, str):
-                    error = TypeError(
-                        'ssl_trust_certificate value {0} is invalid. '
-                        'Must be a string'.format(s_o.ssl_trust_certificate))
-                    LOG.error('Client.__init__', NO_CLIENT_ID, error)
-                    raise error
-                if not os.path.isfile(s_o.ssl_trust_certificate):
-                    error = TypeError(
-                        'The file specified for ssl_trust_certificate is not '
-                        'a regular file')
-                    LOG.error('Client.__init__', NO_CLIENT_ID, error)
-                    raise error
-        else:
-            s_o = SecurityOptions({})
-
-        if on_started and not hasattr(on_started, '__call__'):
-            error = TypeError('on_started must be a function')
-            LOG.error('Client.__init__', NO_CLIENT_ID, error)
-            raise error
-
-        if on_state_changed and not hasattr(on_state_changed, '__call__'):
-            error = TypeError('on_state_changed must be a function')
-            LOG.error('Client.__init__', NO_CLIENT_ID, error)
-            raise error
-
-        # Save the required data as client fields
-        self._service_function = service_function
-        self._service_list = None
-        self._service_param = service
-        self._id = client_id
-        self._security_options = s_o
-
-        self._messenger = _MQLightMessenger(self._id)
-        self._sock = None
-
-        self._queued_chunks = []
-        self._push_timeout = None
-
-        self._connect_thread = None
-
-        # Set the initial state to starting
-        self._state = STARTING
-        self._service = None
-        # The first start, set to False after start and back to True on stop
-        self._first_start = True
-
-        # List of message subscriptions
-        self._subscriptions = []
-        self._queued_subscriptions = []
-        self._queued_unsubscribes = []
-
-        # List of outstanding send operations waiting to be accepted, settled,
-        # etc by the listener
-        self._outstanding_sends = []
-
-        # List of queued sends for resending on a reconnect
-        self._queued_sends = []
-        # List of callbacks to notify when a send operation completes
-        self._queued_send_callbacks = []
-
-        # An identifier for the connection
-        self._connection_id = 0
-
-        # Connection retry timer
-        self._retry_timer = None
-
-        # Heartbeat
-        self._heartbeat_timeout = None
-
-        # callbacks
-        self._on_started = on_started
-        self._on_stopped = None
-        self._on_state_changed = on_state_changed
-
-        # No drain event initially required
-        self._on_drain_required = False
-
-        # Number of attempts the client has tried to reconnect
-        self._retry_count = 0
-
-        if service_function is None:
-            self._service_list = _generate_service_list(
-                service,
-                self._security_options)
-
-        # Check that the id for this instance is not already in use. If it is
-        # then we need to stop the active instance before starting
-        if ACTIVE_CLIENTS.has(self._id):
-            LOG.data(
-                self._id,
-                'stopping previously active client with same client id')
-            previous_active_client = ACTIVE_CLIENTS.get(self._id)
-            ACTIVE_CLIENTS.add(self)
-
-            def stop_callback(err):
-                LOG.data(
-                    self._id,
-                    'stopped previously active client with same client id')
-                err = LocalReplacedError()
-                LOG.error('Client.__init__', self._id, err)
-                if previous_active_client._on_state_changed:
-                    previous_active_client._on_state_changed(ERROR, err)
-
-                self._connect_thread = threading.Thread(
-                    target=self._perform_connect,
-                    args=(on_started, service, True))
-                self._connect_thread.start()
-            previous_active_client.stop(stop_callback)
-        else:
-            ACTIVE_CLIENTS.add(self)
-            self._connect_thread = threading.Thread(
-                target=self._perform_connect,
-                args=(on_started, service, True))
-            self._connect_thread.start()
-        LOG.exit('Client.__init__', self._id, None)
 
     def _on_read(self, chunk):
         LOG.entry_often('Client._on_read', self._id)
