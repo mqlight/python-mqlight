@@ -480,7 +480,7 @@ class Client(object):
 
     # wrapper function that does most of the client setup
     # so that an instance is returned before callbacks are
-    # issued, in case a client method is called in one 
+    # issued, in case a client method is called in one
     # before the __init__ returns with the client instance.
     def _complete_init(__init__):
         def wrapper(
