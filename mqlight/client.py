@@ -508,8 +508,9 @@ class Client(object):
             and sslVerifyName which is a boolean.
         :param on_started: (optional) A function to be called when the Client
             reaches the started state. This function prototype must be
-            ``func(err)`` where ``err`` is ``None`` if the client started
-            correctly, otherwise it is the error message.
+            ``func(client, err)`` where ``err`` is ``None`` if the client
+            started correctly, otherwise it is the error message. ``client``
+            is an instance of the client.
         :param on_state_changed: (optional) A function to be called when the
             client changes state. This function prototype must be
             ``func(state, msg)`` where ``state`` is started, starting, stopped,
@@ -845,7 +846,7 @@ class Client(object):
             if on_started:
                 err = LocalReplacedError()
                 LOG.entry('Client._perform_connect.on_started', self._id)
-                on_started(err)
+                on_started(self, err)
                 LOG.exit('Client.perform_connect.on_started', self._id, None)
             LOG.exit('Client._perform_connect', self._id, None)
             return
@@ -882,7 +883,7 @@ class Client(object):
                         LOG.entry(
                             'Client._perform_connect.on_started',
                             self._id)
-                        on_started(None, self)
+                        on_started(self, None)
                         LOG.exit(
                             'Client._perform_connect.on_started',
                             self._id,
@@ -912,7 +913,7 @@ class Client(object):
                     self._id)
                 if err:
                     ACTIVE_CLIENTS.remove(self._id)
-                    on_started(None, self)
+                    on_started(self, None)
                 else:
                     try:
                         self._service_list = _generate_service_list(
@@ -921,7 +922,7 @@ class Client(object):
                         self._connect_to_service(on_started)
                     except Exception as exc:
                         ACTIVE_CLIENTS.remove(self._id)
-                        on_started(exc, self)
+                        on_started(self, exc)
                 LOG.exit(
                     'Client._perform_connect._callback',
                     self._id,
@@ -937,7 +938,7 @@ class Client(object):
                 ACTIVE_CLIENTS.remove(self._id)
                 LOG.error('Client._perform_connect', self._id, exc)
                 if on_started:
-                    on_started(exc, self)
+                    on_started(self, exc)
         LOG.exit('Client._perform_connect', self._id, None)
 
     def start(self, on_started=None):
@@ -1655,7 +1656,7 @@ class Client(object):
                     if callback:
                         callback_thread = threading.Thread(
                             target=callback,
-                            args=(None, self))
+                            args=(self, None))
                         callback_thread.start()
 
                     # Setup heartbeat timer to ensure that while connected we
