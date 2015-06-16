@@ -882,7 +882,7 @@ class Client(object):
                         LOG.entry(
                             'Client._perform_connect.on_started',
                             self._id)
-                        on_started(None)
+                        on_started(None, self)
                         LOG.exit(
                             'Client._perform_connect.on_started',
                             self._id,
@@ -912,7 +912,7 @@ class Client(object):
                     self._id)
                 if err:
                     ACTIVE_CLIENTS.remove(self._id)
-                    on_started(None)
+                    on_started(None, self)
                 else:
                     try:
                         self._service_list = _generate_service_list(
@@ -921,7 +921,7 @@ class Client(object):
                         self._connect_to_service(on_started)
                     except Exception as exc:
                         ACTIVE_CLIENTS.remove(self._id)
-                        on_started(exc)
+                        on_started(exc, self)
                 LOG.exit(
                     'Client._perform_connect._callback',
                     self._id,
@@ -937,7 +937,7 @@ class Client(object):
                 ACTIVE_CLIENTS.remove(self._id)
                 LOG.error('Client._perform_connect', self._id, exc)
                 if on_started:
-                    on_started(exc)
+                    on_started(exc, self)
         LOG.exit('Client._perform_connect', self._id, None)
 
     def start(self, on_started=None):
@@ -1655,7 +1655,7 @@ class Client(object):
                     if callback:
                         callback_thread = threading.Thread(
                             target=callback,
-                            args=(None,))
+                            args=(None, self))
                         callback_thread.start()
 
                     # Setup heartbeat timer to ensure that while connected we
