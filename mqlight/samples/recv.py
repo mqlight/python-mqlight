@@ -135,7 +135,7 @@ if args.trust_certificate is not None:
         service = 'amqps://localhost'
 
 
-def subscribe(err):
+def subscribe(client, err):
     """
     Started callback
     """

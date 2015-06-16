@@ -39,7 +39,7 @@ class TestSend(object):
         # pylint: disable=no-value-for-parameter
         test_is_done = threading.Event()
 
-        def started(err):
+        def started(client, err):
             """started listener"""
             with pytest.raises(TypeError):
                 client.send()
@@ -59,7 +59,7 @@ class TestSend(object):
         # pylint: disable=too-many-function-args
         test_is_done = threading.Event()
 
-        def started(err):
+        def started(client, err):
             """started listener"""
             callback = Mock()
             with pytest.raises(TypeError):
@@ -86,7 +86,7 @@ class TestSend(object):
             {'valid': True, 'topic': '/kittens'}
         ]
 
-        def started(err):
+        def started(client, err):
             """started listener"""
             try:
                 for test in data:
@@ -116,7 +116,7 @@ class TestSend(object):
             {'topic': 'topic2', 'data': 'data2', 'options': None}
         ]
 
-        def started(err):
+        def started(client, err):
             """started listener"""
             def send_callback(err, topic, d, options):
                 """send callback"""
@@ -150,7 +150,7 @@ class TestSend(object):
         """
         test_is_done = threading.Event()
 
-        def started(err):
+        def started(client, err):
             """started listener"""
             def stopped(err):
                 """stopped listener"""
@@ -183,7 +183,7 @@ class TestSend(object):
             {'valid': True, 'options': {'a': 1}}
         ]
 
-        def started(err):
+        def started(client, err):
             """started listener"""
             try:
                 for test in data:
@@ -221,7 +221,7 @@ class TestSend(object):
             {'valid': True, 'qos': mqlight.QOS_AT_LEAST_ONCE}
         ]
 
-        def started(err):
+        def started(client, err):
             """started listener"""
             try:
                 for test in data:
@@ -253,7 +253,7 @@ class TestSend(object):
             {'valid': True, 'qos': 0, 'callback': func}
         ]
 
-        def started(err):
+        def started(client, err):
             """started listener"""
             try:
                 for test in data:

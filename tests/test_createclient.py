@@ -45,20 +45,20 @@ class TestCreateClient(object):
         client_id = 'test_golden_path'
         service = 'amqp://host:1234'
 
-        def started(value):
+        def started(client, value):
             """started listener"""
             assert value is None
             assert client.get_state() == mqlight.STARTED
             assert client.get_service() == service
             client.stop()
             test_is_done.set()
+            assert client.get_state() in (mqlight.STARTING, mqlight.STARTED)
+            assert client.get_id() == client_id
 
         client = mqlight.Client(
             service=service,
             client_id=client_id,
             on_started=started)
-        assert client.get_state() in (mqlight.STARTING, mqlight.STARTED)
-        assert client.get_id() == client_id
         test_is_done.wait(self.TEST_TIMEOUT)
         assert test_is_done.is_set()
 
@@ -200,7 +200,7 @@ class TestCreateClient(object):
         for opts in data:
             started_event = threading.Event()
 
-            def started(err):
+            def started(client, err):
                 """started listener"""
                 started_event.set()  # pylint: disable=cell-var-from-loop
             clients.append(mqlight.Client(
@@ -319,7 +319,7 @@ class TestCreateClient(object):
                     valid_ssl_test(ssl_data['ssl_trust_certificate'],
                                    ssl_data['ssl_verify_name'])
 
-            def started(err):
+            def started(client, err):
                 """started listener"""
                 assert err is None
                 client.stop(stopped)
@@ -387,7 +387,7 @@ class TestCreateClient(object):
                     invalid_ssl_test(ssl_data['ssl_trust_certificate'],
                                      ssl_data['ssl_verify_name'])
 
-            def started(err):
+            def started(client, err):
                 """started listener"""
                 client.stop()
                 bad_certificate_fd.close()
@@ -417,9 +417,9 @@ class TestCreateClient(object):
         test_is_done = threading.Event()
         opts = {'service': 'amqp://localhost', 'id': 'Aname'}
 
-        def client_a_start(err):
+        def client_a_start(err, client):
             """client a started listener"""
-            def client_b_start(err):
+            def client_b_start(err, client):
                 """client b started listener"""
                 client_b.stop()
                 assert True

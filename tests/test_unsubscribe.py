@@ -57,7 +57,7 @@ class TestUnsubscribe(object):
         # pylint: disable=too-many-function-args
         test_is_done = threading.Event()
 
-        def started(err):
+        def started(client, err):
             """started listener"""
             client.subscribe('/foo', 'share1')
             with pytest.raises(TypeError):
@@ -83,7 +83,7 @@ class TestUnsubscribe(object):
             """client stop callback"""
             test_is_done.set()
 
-        def started(err):
+        def started(client, err):
             """started listener"""
             func = Mock()
             def subscribed1(err, pattern, share):
@@ -125,7 +125,7 @@ class TestUnsubscribe(object):
             """client stop callback"""
             test_is_done.set()
 
-        def started(err):
+        def started(client, err):
             """started listener"""
             def unsub(err, topic, share):
                 """unsubscribe callback"""
@@ -181,7 +181,7 @@ class TestUnsubscribe(object):
         """
         test_is_done = threading.Event()
 
-        def started(err):
+        def started(client, err):
             """started listener"""
             subscribe_event = threading.Event()
             client.subscribe(
@@ -207,7 +207,7 @@ class TestUnsubscribe(object):
         purposes).
         """
         test_is_done = threading.Event()
-        def started(err):
+        def started(client, err):
             """started listener"""
             subscribe_event = threading.Event()
             client.subscribe(
@@ -246,7 +246,7 @@ class TestUnsubscribe(object):
             {'valid': True, 'pattern': '/+'}
         ]
 
-        def started(err):
+        def started(client, err):
             """started listener"""
             try:
                 for test in data:
@@ -283,7 +283,7 @@ class TestUnsubscribe(object):
             {'valid': False, 'share': ':a'}
         ]
 
-        def started(err):
+        def started(client, err):
             """started listener"""
             try:
                 for test in data:
@@ -329,7 +329,7 @@ class TestUnsubscribe(object):
             {'valid': True, 'options': {'a': 1}}
         ]
 
-        def started(err):
+        def started(client, err):
             """started listener"""
             try:
                 for test in data:
@@ -381,7 +381,7 @@ class TestUnsubscribe(object):
             {'valid': False, 'ttl': ''}
         ]
 
-        def started(err):
+        def started(client, err):
             """started listener"""
             try:
                 for test in data:

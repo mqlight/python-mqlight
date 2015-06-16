@@ -173,7 +173,7 @@ def send_messages():
         send_message()
 
 
-def started(err):
+def started(client, err):
     """
     Started callback
     """

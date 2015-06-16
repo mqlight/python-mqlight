@@ -48,7 +48,7 @@ class TestStart(object):
         """
         test_is_done = threading.Event()
 
-        def started(err):
+        def started(client, err):
             """started listener"""
             assert err is None
             assert client.get_state() == mqlight.STARTED
@@ -109,7 +109,7 @@ class TestStart(object):
                 _MQLightMessenger.set_connect_status(
                     _MQLightMessenger.get_connect_status() - 1)
 
-        def started(err):
+        def started(client, err):
             """started listener"""
             assert err is None
             assert _MQLightMessenger.get_connect_status() == 0
