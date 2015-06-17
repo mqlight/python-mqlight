@@ -511,7 +511,8 @@ class Client(object):
             ``func(client)`` ``client`` is an instance of the client.
         :param on_state_changed: (optional) A function to be called when the
             client changes state. This function prototype must be
-            ``func(state, msg)`` where ``state`` is started, starting, stopped,
+            ``func(client, state, msg)`` where ``client`` is an instance of
+            the client, ``state`` is started, starting, stopped,
             stopping, restarted, retrying, error or drain and ``msg`` is
             ``None`` except if state is error, in this case it is the error
             message.
@@ -841,11 +842,12 @@ class Client(object):
             LOG.data(
                 self._id,
                 'Not connecting because client has been replaced')
-            if on_started:
+            if on_state_changed:
                 err = LocalReplacedError()
-                LOG.entry('Client._perform_connect.on_started', self._id)
-                on_started(self)
-                LOG.exit('Client.perform_connect.on_started', self._id, None)
+                LOG.entry('Client._perform_connect.on_state_changed', self._id)
+                on_state_changed(self, ERROR, err)
+                LOG.exit('Client.perform_connect.on_state_changed',
+                         self._id, None)
             LOG.exit('Client._perform_connect', self._id, None)
             return
 
