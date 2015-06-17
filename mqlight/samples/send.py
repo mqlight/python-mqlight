@@ -173,7 +173,7 @@ def send_messages():
         send_message()
 
 
-def started(client, err):
+def started(client):
     """
     Started callback
     """
@@ -183,7 +183,7 @@ def started(client, err):
     send_messages()
 
 
-def state_changed(state, msg=None):
+def state_changed(client, state, msg=None):
     if state == mqlight.ERROR:
         close(1, msg)
     elif state == mqlight.DRAIN:

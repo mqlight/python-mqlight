@@ -135,7 +135,7 @@ if args.trust_certificate is not None:
         service = 'amqps://localhost'
 
 
-def subscribe(client, err):
+def subscribe(client):
     """
     Started callback
     """
@@ -202,7 +202,7 @@ def message(message_type, data, delivery):
             delivery['message']['confirm_delivery']()
 
 
-def state_changed(state, msg):
+def state_changed(client, state, msg):
     if state == mqlight.ERROR:
         close(1, msg)
 

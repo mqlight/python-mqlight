@@ -57,7 +57,7 @@ class TestUnsubscribe(object):
         # pylint: disable=too-many-function-args
         test_is_done = threading.Event()
 
-        def started(client, err):
+        def started(client):
             """started listener"""
             client.subscribe('/foo', 'share1')
             with pytest.raises(TypeError):
@@ -79,11 +79,11 @@ class TestUnsubscribe(object):
         """
         test_is_done = threading.Event()
 
-        def on_stopped(err):
+        def on_stopped(self):
             """client stop callback"""
             test_is_done.set()
 
-        def started(client, err):
+        def started(client):
             """started listener"""
             func = Mock()
             def subscribed1(err, pattern, share):
@@ -121,15 +121,14 @@ class TestUnsubscribe(object):
         """
         test_is_done = threading.Event()
 
-        def on_stopped(err):
+        def on_stopped(client):
             """client stop callback"""
             test_is_done.set()
 
-        def started(client, err):
+        def started(client):
             """started listener"""
             def unsub(err, topic, share):
                 """unsubscribe callback"""
-                assert err is None
                 assert topic == '/foo'
                 assert share is None
 
@@ -165,7 +164,7 @@ class TestUnsubscribe(object):
         test_is_done = threading.Event()
         client = mqlight.Client('amqp://host', 'test_unsubscribe_when_stopped')
 
-        def stopped(err):
+        def stopped(client):
             """stopped listener"""
             with pytest.raises(StoppedError):
                 client.unsubscribe('/foo')
@@ -181,7 +180,7 @@ class TestUnsubscribe(object):
         """
         test_is_done = threading.Event()
 
-        def started(client, err):
+        def started(client):
             """started listener"""
             subscribe_event = threading.Event()
             client.subscribe(
@@ -207,7 +206,7 @@ class TestUnsubscribe(object):
         purposes).
         """
         test_is_done = threading.Event()
-        def started(client, err):
+        def started(client):
             """started listener"""
             subscribe_event = threading.Event()
             client.subscribe(
@@ -246,7 +245,7 @@ class TestUnsubscribe(object):
             {'valid': True, 'pattern': '/+'}
         ]
 
-        def started(client, err):
+        def started(client):
             """started listener"""
             try:
                 for test in data:
@@ -283,7 +282,7 @@ class TestUnsubscribe(object):
             {'valid': False, 'share': ':a'}
         ]
 
-        def started(client, err):
+        def started(client):
             """started listener"""
             try:
                 for test in data:
@@ -329,7 +328,7 @@ class TestUnsubscribe(object):
             {'valid': True, 'options': {'a': 1}}
         ]
 
-        def started(client, err):
+        def started(client):
             """started listener"""
             try:
                 for test in data:
@@ -381,7 +380,7 @@ class TestUnsubscribe(object):
             {'valid': False, 'ttl': ''}
         ]
 
-        def started(client, err):
+        def started(client):
             """started listener"""
             try:
                 for test in data:

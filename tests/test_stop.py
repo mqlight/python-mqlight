@@ -37,8 +37,8 @@ class TestStop(object):
         Test a successful stop, ensuring that both the 'stopped'
         event and the callback passed into client.stopped(...) are driven.
         """
-        def started(client, err):
-            def stopped(err):
+        def started(client):
+            def stopped(client):
                 """stopped listener"""
                 test_is_done.set()
             client.stop(stopped)
@@ -79,21 +79,18 @@ class TestStop(object):
         """
         test_is_done = threading.Event()
 
-        def second_callback(err):
+        def second_callback(client):
             """second stopped callback"""
-            assert err is None
             assert client.get_state() == mqlight.STOPPED
             test_is_done.set()
 
-        def first_callback(err):
+        def first_callback(client):
             """first stopped callback"""
-            assert err is None
             assert client.get_state() == mqlight.STOPPED
             client.stop(second_callback)
 
-        def started(client, err):
+        def started(client):
             """started listener"""
-            assert err is None
             assert client.get_state() == mqlight.STARTED
             client.stop(first_callback)
         client = mqlight.Client('amqp://host:1234',

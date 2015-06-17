@@ -39,7 +39,7 @@ class TestSubscribe(object):
         # pylint: disable=no-value-for-parameter
         test_is_done = threading.Event()
 
-        def started(client, err):
+        def started(client):
             """started listener"""
             with pytest.raises(TypeError):
                 client.subscribe()
@@ -58,7 +58,7 @@ class TestSubscribe(object):
         """
         test_is_done = threading.Event()
 
-        def started(client, err):
+        def started(client):
             """started listener"""
             callback = Mock()
             with pytest.raises(TypeError):
@@ -79,7 +79,7 @@ class TestSubscribe(object):
         """
         test_is_done = threading.Event()
 
-        def started(client, err):
+        def started(client):
             """started listener"""
             with pytest.raises(TypeError):
                 client.subscribe('/foo1', 'share', {}, 7)
@@ -100,12 +100,11 @@ class TestSubscribe(object):
         """
         test_is_done = threading.Event()
 
-        def started(client, err):
+        def started(client):
             """started listener"""
 
             def subscribed(err, topic_pattern, share):
                 """subscribe callback"""
-                assert err is None
                 assert topic_pattern == '/foo'
                 assert share is None
                 client.stop()
@@ -125,7 +124,7 @@ class TestSubscribe(object):
         """
         test_is_done = threading.Event()
 
-        def started(client, err):
+        def started(client):
             """started listener"""
             def subscribed(err, topic_pattern, share):
                 """subscribe callback"""
@@ -149,7 +148,7 @@ class TestSubscribe(object):
         client = mqlight.Client('amqp://host',
                                 'test_subscribe_when_stopped')
 
-        def stopped(err):
+        def stopped(client):
             """stopped listener"""
             with pytest.raises(MQLightError):
                 client.subscribe('/foo')
@@ -163,7 +162,7 @@ class TestSubscribe(object):
         """
         test_is_done = threading.Event()
 
-        def started(client, err):
+        def started(client):
             """started listener"""
             assert client.subscribe('/foo') == client
             client.stop()
@@ -195,7 +194,7 @@ class TestSubscribe(object):
             {'valid': True, 'pattern': '/+'}
         ]
 
-        def started(client, err):
+        def started(client):
             """started listener"""
             try:
                 for test in data:
@@ -229,7 +228,7 @@ class TestSubscribe(object):
             {'valid': False, 'share': ':a'}
         ]
 
-        def started(client, err):
+        def started(client):
             """started listener"""
             try:
                 for test in data:
@@ -268,7 +267,7 @@ class TestSubscribe(object):
             {'valid': True, 'options': {'a': 1}}
         ]
 
-        def started(client, err):
+        def started(client):
             """started listener"""
             try:
                 for i in range(len(data)):
@@ -310,7 +309,7 @@ class TestSubscribe(object):
             {'valid': True, 'qos': mqlight.QOS_AT_LEAST_ONCE}
         ]
 
-        def started(client, err):
+        def started(client):
             """started listener"""
             try:
                 for i in range(len(data)):
@@ -358,7 +357,7 @@ class TestSubscribe(object):
             {'valid': True, 'opts': {'auto_confirm': tmp}}
         ]
 
-        def started(client, err):
+        def started(client):
             """started listener"""
             try:
                 for i in range(len(data)):
@@ -401,7 +400,7 @@ class TestSubscribe(object):
             {'valid': True, 'ttl': 9007199254740992}
         ]
 
-        def started(client, err):
+        def started(client):
             """started listener"""
             try:
                 for i in range(len(data)):

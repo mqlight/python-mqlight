@@ -45,9 +45,8 @@ class TestCreateClient(object):
         client_id = 'test_golden_path'
         service = 'amqp://host:1234'
 
-        def started(client, value):
+        def started(client):
             """started listener"""
-            assert value is None
             assert client.get_state() == mqlight.STARTED
             assert client.get_service() == service
             client.stop()
@@ -200,7 +199,7 @@ class TestCreateClient(object):
         for opts in data:
             started_event = threading.Event()
 
-            def started(client, err):
+            def started(client):
                 """started listener"""
                 started_event.set()  # pylint: disable=cell-var-from-loop
             clients.append(mqlight.Client(
@@ -295,7 +294,7 @@ class TestCreateClient(object):
                 'ssl_verify_name': ssl_verify_name
             }
 
-            def state_changed(state, err):
+            def state_changed(client, state, err):
                 if state == mqlight.ERROR:
                     """error listener"""
                     pytest.fail('Unexpected error event: ' + str(err))
@@ -306,7 +305,7 @@ class TestCreateClient(object):
                     os.remove('BadVerify')
                     test_is_done.set()
 
-            def stopped(err):
+            def stopped(client):
                 """stopped listener"""
                 if len(data) == 0:
                     valid_certificate_fd.close()
@@ -319,9 +318,8 @@ class TestCreateClient(object):
                     valid_ssl_test(ssl_data['ssl_trust_certificate'],
                                    ssl_data['ssl_verify_name'])
 
-            def started(client, err):
+            def started(client):
                 """started listener"""
-                assert err is None
                 client.stop(stopped)
             client = mqlight.Client(
                 service=service,
@@ -368,12 +366,12 @@ class TestCreateClient(object):
                 'ssl_verify_name': ssl_verify_name
             }
 
-            def state_changed(state, err):
+            def state_changed(client, state, err):
                 if state == mqlight.ERROR:
                     """error listener"""
                     client.stop(on_stopped=stopped)
 
-            def stopped(err):
+            def stopped(client):
                 """stopped listener"""
                 print 'Stopped client, len(data) == ' + str(len(data))
                 if len(data) == 0:
@@ -387,7 +385,7 @@ class TestCreateClient(object):
                     invalid_ssl_test(ssl_data['ssl_trust_certificate'],
                                      ssl_data['ssl_verify_name'])
 
-            def started(client, err):
+            def started(client):
                 """started listener"""
                 client.stop()
                 bad_certificate_fd.close()
@@ -417,9 +415,9 @@ class TestCreateClient(object):
         test_is_done = threading.Event()
         opts = {'service': 'amqp://localhost', 'id': 'Aname'}
 
-        def client_a_start(err, client):
+        def client_a_start(client_a):
             """client a started listener"""
-            def client_b_start(err, client):
+            def client_b_start(client_b):
                 """client b started listener"""
                 client_b.stop()
                 assert True
@@ -428,7 +426,7 @@ class TestCreateClient(object):
                                       opts['id'],
                                       on_started=client_b_start)
 
-        def client_a_state_changed(state, err):
+        def client_a_state_changed(client_a, state, err):
             if state == mqlight.ERROR:
                 """client a error listener"""
                 assert 'ReplacedError' in str(
