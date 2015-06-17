@@ -508,9 +508,7 @@ class Client(object):
             and sslVerifyName which is a boolean.
         :param on_started: (optional) A function to be called when the Client
             reaches the started state. This function prototype must be
-            ``func(client, err)`` where ``err`` is ``None`` if the client
-            started correctly, otherwise it is the error message. ``client``
-            is an instance of the client.
+            ``func(client)`` ``client`` is an instance of the client.
         :param on_state_changed: (optional) A function to be called when the
             client changes state. This function prototype must be
             ``func(state, msg)`` where ``state`` is started, starting, stopped,
@@ -706,7 +704,7 @@ class Client(object):
                 err = LocalReplacedError()
                 LOG.error('Client.__init__', self._id, err)
                 if previous_active_client._on_state_changed:
-                    previous_active_client._on_state_changed(ERROR, err)
+                    previous_active_client._on_state_changed(self, ERROR, err)
 
                 self._connect_thread = threading.Thread(
                     target=self._perform_connect,
@@ -752,7 +750,7 @@ class Client(object):
                 ERROR)
             state_callback = threading.Thread(
                 target=self._on_state_changed,
-                args=(ERROR, exc))
+                args=(self, ERROR, exc))
             state_callback.start()
 
         # Force any final data from the messenger, which may give it the
@@ -846,7 +844,7 @@ class Client(object):
             if on_started:
                 err = LocalReplacedError()
                 LOG.entry('Client._perform_connect.on_started', self._id)
-                on_started(self, err)
+                on_started(self)
                 LOG.exit('Client.perform_connect.on_started', self._id, None)
             LOG.exit('Client._perform_connect', self._id, None)
             return
@@ -883,7 +881,7 @@ class Client(object):
                         LOG.entry(
                             'Client._perform_connect.on_started',
                             self._id)
-                        on_started(self, None)
+                        on_started(self)
                         LOG.exit(
                             'Client._perform_connect.on_started',
                             self._id,
@@ -913,7 +911,7 @@ class Client(object):
                     self._id)
                 if err:
                     ACTIVE_CLIENTS.remove(self._id)
-                    on_started(self, None)
+                    on_started(self)
                 else:
                     try:
                         self._service_list = _generate_service_list(
@@ -922,7 +920,7 @@ class Client(object):
                         self._connect_to_service(on_started)
                     except Exception as exc:
                         ACTIVE_CLIENTS.remove(self._id)
-                        on_started(self, exc)
+                        on_state_changed(self, ERROR, exc)
                 LOG.exit(
                     'Client._perform_connect._callback',
                     self._id,
@@ -938,7 +936,7 @@ class Client(object):
                 ACTIVE_CLIENTS.remove(self._id)
                 LOG.error('Client._perform_connect', self._id, exc)
                 if on_started:
-                    on_started(self, exc)
+                    on_state_changed(self, ERROR, exc)
         LOG.exit('Client._perform_connect', self._id, None)
 
     def start(self, on_started=None):
@@ -986,13 +984,13 @@ class Client(object):
                     'stopped previously active client with same client id')
                 err = LocalReplacedError()
                 if self._on_state_changed:
-                    self._on_state_changed(ERROR, err)
+                    self._on_state_changed(self, ERROR, err)
                 LOG.error(
                     'Client.start.stop_callback',
                     previous_client.get_id(),
                     err)
                 if previous_client._on_state_changed:
-                    previous_client._on_state_changed(ERROR, err)
+                    previous_client._on_state_changed(self, ERROR, err)
                 self._connect_thread = self._perform_connect(
                     on_started, self._service_param, False)
             previous_client.stop(stop_callback)
@@ -1115,7 +1113,7 @@ class Client(object):
             def next_tick(exc):
                 LOG.error('Client._check_for_messages', self._id, exc)
                 if self._on_state_changed:
-                    self._on_state_changed(ERROR, exc)
+                    self._on_state_changed(self, ERROR, exc)
                 if _should_reconnect(exc):
                     self._reconnect()
             timer = threading.Timer(0.2, next_tick, [exc])
@@ -1329,7 +1327,7 @@ class Client(object):
                 self._id,
                 err)
             if self._on_state_changed:
-                self._on_state_changed(ERROR, err)
+                self._on_state_changed(self, ERROR, err)
             else:
                 # XXX: if user hasn't set an error handler, print and exit?
                 traceback.print_exc(file=sys.stderr)
@@ -1402,7 +1400,7 @@ class Client(object):
         if self.is_stopped():
             if on_stopped:
                 LOG.entry('Client.stop.on_stopped', self._id)
-                on_stopped(None)
+                on_stopped(self)
                 LOG.exit('Client.stop.on_stopped', self._id, None)
             LOG.exit('Client.stop', self._id, self)
             return self
@@ -1477,13 +1475,13 @@ class Client(object):
                 if not self._first_start:
                     self._first_start = True
                     if self._on_state_changed:
-                        self._on_state_changed(STOPPED, None)
+                        self._on_state_changed(self, STOPPED, None)
 
                 if on_stopped:
                     LOG.entry(
                         'Client._perform_disconnect.on_stopped',
                         self._id)
-                    on_stopped(None)
+                    on_stopped(self)
                     LOG.exit(
                         'Client._perform_disconnect.on_stopped',
                         self._id,
@@ -1542,7 +1540,9 @@ class Client(object):
         if self.is_stopped():
             if callback:
                 LOG.entry('Client._connect_to_service.callback', self._id)
-                callback(StoppedError('connect aborted due to disconnect'))
+                self._on_state_changed(
+                    self, ERROR,
+                    StoppedError('connect aborted due to disconnect'))
                 LOG.exit('Client._connect_to_service.callback', self._id, None)
             LOG.exit('Client._connect_to_service', self._id, None)
             return
@@ -1651,12 +1651,12 @@ class Client(object):
                         event_to_emit)
                     state_callback = threading.Thread(
                         target=self._on_state_changed,
-                        args=(event_to_emit, None))
+                        args=(self, event_to_emit, None))
                     state_callback.start()
                     if callback:
                         callback_thread = threading.Thread(
                             target=callback,
-                            args=(self, None))
+                            args=(self,))
                         callback_thread.start()
 
                     # Setup heartbeat timer to ensure that while connected we
@@ -1737,7 +1737,7 @@ class Client(object):
                         self._id,
                         error)
                     if self._on_state_changed:
-                        self._on_state_changed(ERROR, error)
+                        self._on_state_changed(self, ERROR, error)
                 timer = threading.Timer(1, next_tick)
                 timer.start()
         LOG.exit('Client._connect_to_service', self._id, None)
@@ -2051,7 +2051,7 @@ class Client(object):
                                         self._on_drain_required = False
                                         state_callback = threading.Thread(
                                             target=self._on_state_changed,
-                                            args=(DRAIN, None))
+                                            args=(self, DRAIN, None))
                                         state_callback.start()
 
                                     # invoke on_sent, if specified
@@ -2144,7 +2144,7 @@ class Client(object):
                                 self._id,
                                 error)
                             if self._on_state_changed:
-                                self._on_state_changed(ERROR, error)
+                                self._on_state_changed(self, ERROR, error)
 
                         if _should_reconnect(error):
                             self._reconnect()
@@ -2215,7 +2215,8 @@ class Client(object):
                             self._id,
                             invocation['error'])
                         if self._on_state_changed:
-                            self._on_state_changed(ERROR, invocation['error'])
+                            self._on_state_changed(self,
+                                                   ERROR, invocation['error'])
                         do_reconnect |= _should_reconnect(invocation['error'])
                     if do_reconnect:
                         self._reconnect()
@@ -2405,7 +2406,7 @@ class Client(object):
             if err:
                 LOG.error('Client.subscribe', self._id, err)
                 if self._on_state_changed:
-                    self._on_state_changed(ERROR, err)
+                    self._on_state_changed(self, ERROR, err)
 
                 if _should_reconnect(err):
                     LOG.data(
@@ -2662,7 +2663,7 @@ class Client(object):
             if err:
                 LOG.error('Client.subscribe', self._id, err)
                 if self._on_state_changed:
-                    self._on_state_changed(ERROR, err)
+                    self._on_state_changed(self, ERROR, err)
                 if _should_reconnect(err):
                     queue_unsubscribe()
                     self._reconnect()
