@@ -720,9 +720,12 @@ class Client(object):
             self._connect_thread.start()
         LOG.exit('Client.__init__', self._id, None)
 
-    def _on_read(self, chunk):
+    def _on_read(self, chunk, data_thread=None):
         LOG.entry_often('Client._on_read', self._id)
-        # Queue up the chunk
+        # Queue up the chunk only once the previous received chunk has
+        # been added to the queue
+        if data_thread:
+            data_thread.join()
         self._queued_chunks.append(chunk)
         # Small chunks usually indicate something needing immediate
         # attention so push them immediately, whereas larger chunks may

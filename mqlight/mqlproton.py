@@ -1083,6 +1083,7 @@ class _MQLightSocket(object):
         self.running = False
         self.on_read = on_read
         self.on_close = on_close
+        self.data_thread = None
         try:
             self.sock = socket.socket(
                 socket.AF_INET,
@@ -1120,10 +1121,13 @@ class _MQLightSocket(object):
                 data = self.sock.recv(4096)
                 if data:
                     callback = threading.Thread(
-                        target=self.on_read, args=(data,))
+                        target=self.on_read, args=(data,
+                                                   self.data_thread))
+                    self.data_thread = callback
                     callback.start()
                 else:
                     self.running = False
+                    self.data_thread.join()
                     callback = threading.Thread(target=self.on_close)
                     callback.start()
         LOG.exit('_MQLightSocket.loop', NO_CLIENT_ID, None)
