@@ -642,7 +642,9 @@ class Client(object):
         self._queued_chunks = []
         self._push_timeout = None
 
+        # Thread variables for synchronization
         self._connect_thread = None
+        self._check_thread = None
 
         # Set the initial state to starting
         self._state = STARTING
@@ -817,9 +819,15 @@ class Client(object):
             # a check.
             if self._subscriptions:
                 if self.state == STARTED:
-                    check_thread = threading.Thread(
+                    while self._check_thread:
+                        try:
+                            self._check_thread.join()
+                            break
+                        except RuntimeError:
+                            time.sleep(0.05)
+                    self._check_thread = threading.Thread(
                         target=self._check_for_messages)
-                    check_thread.start()
+                    self._check_thread.start()
         LOG.exit('Client._push_chunks', self._id, None)
 
     def _perform_connect(self, on_started, service, new_client):
