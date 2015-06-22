@@ -646,6 +646,7 @@ class Client(object):
         self._connect_thread = None
         self._check_thread = None
         self._check_thread_started = threading.Event()
+        self._data_thread_started = threading.Event()
 
         # Set the initial state to starting
         self._state = STARTING
@@ -728,7 +729,14 @@ class Client(object):
         # Queue up the chunk only once the previous received chunk has
         # been added to the queue
         if data_thread:
+            # the second on_read call might occur before
+            # self._data_thread_started is initialized, so ensure it has
+            while not self._data_thread_started:
+                time.sleep(0.01)
+            self._data_thread_started.wait()
             data_thread.join()
+        self._data_thread_started = threading.Event()
+        self._data_thread_started.set()
         self._queued_chunks.append(chunk)
         # Small chunks usually indicate something needing immediate
         # attention so push them immediately, whereas larger chunks may
