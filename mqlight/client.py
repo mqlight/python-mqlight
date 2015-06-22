@@ -645,6 +645,7 @@ class Client(object):
         # Thread variables for synchronization
         self._connect_thread = None
         self._check_thread = None
+        self._check_thread_started = threading.Event()
 
         # Set the initial state to starting
         self._state = STARTING
@@ -819,14 +820,14 @@ class Client(object):
             # a check.
             if self._subscriptions:
                 if self.state == STARTED:
-                    while self._check_thread:
-                        try:
-                            self._check_thread.join()
-                            break
-                        except RuntimeError:
-                            time.sleep(0.05)
+                    if self._check_thread:
+                        # ensure thread has started
+                        self._check_thread_started.wait()
+                        # wait until thread is finished
+                        self._check_thread.join()
                     self._check_thread = threading.Thread(
                         target=self._check_for_messages)
+                    self._check_thread_started.clear()
                     self._check_thread.start()
         LOG.exit('Client._push_chunks', self._id, None)
 
@@ -1100,6 +1101,7 @@ class Client(object):
         callback set in subscribe() is called when a message is received.
         """
         LOG.entry_often('Client._check_for_messages', self._id)
+        self._check_thread_started.set()
         if self.get_state() != STARTED or not self._subscriptions:
             LOG.exit_often('Client._check_for_messages', self._id, None)
             return
