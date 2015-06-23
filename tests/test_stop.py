@@ -2,7 +2,7 @@
 <copyright
 notice="lm-source-program"
 pids="5725-P60"
-years="2013,2014"
+years="2013,2015"
 crc="3568777996" >
 Licensed Materials - Property of IBM
 
@@ -47,7 +47,7 @@ class TestStop(object):
             'amqp://host:1234',
             'test_stop_callback_event',
             on_started=started)
-        
+
         test_is_done.wait(self.TEST_TIMEOUT)
         assert test_is_done.is_set()
         assert client.get_state() == mqlight.STOPPED
