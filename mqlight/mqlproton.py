@@ -1003,7 +1003,7 @@ class _MQLightMessenger(object):
                     self.connection,
                     chunk,
                     len(chunk))
-                 # A push into proton may mean data also needs to be written.
+                # A push into proton may mean data also needs to be written.
                 cproton.pn_connection_pop(self.connection, 0)
             else:
                 # This connection has already been closed, so this data can
