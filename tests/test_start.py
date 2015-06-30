@@ -61,7 +61,6 @@ class TestStart(object):
         client = mqlight.Client('amqp://host:1234',
                                 'test_successful_start_stop',
                                 on_started=started)
-        assert client.get_state() in (mqlight.STARTED, mqlight.STARTING)
 
     def test_start_argument_is_function(self):
         """
