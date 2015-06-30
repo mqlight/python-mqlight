@@ -19,6 +19,7 @@ import socket
 import ssl
 import select
 import threading
+import Queue
 from backports.ssl_match_hostname import match_hostname, CertificateError
 from . import cproton
 from .exceptions import MQLightError, SecurityError, ReplacedError, \
@@ -1083,7 +1084,8 @@ class _MQLightSocket(object):
         self.running = False
         self.on_read = on_read
         self.on_close = on_close
-        self.data_thread = None
+        self.data_queue = Queue.Queue()
+        self.queue_data_thread = threading.Thread(target=self.queue_data)
         try:
             self.sock = socket.socket(
                 socket.AF_INET,
@@ -1113,23 +1115,32 @@ class _MQLightSocket(object):
             raise exc
         LOG.exit('_MQLightSocket.__init__', NO_CLIENT_ID, None)
 
+    def queue_data(self):
+        LOG.entry('_MQLightSocket.queue_data', NO_CLIENT_ID)
+        while self.running:
+            try:
+                callback, args = self.data_queue.get(True, 1)
+                if args:
+                    callback(args)
+                # if we do not get arguments that means on_close was passed in
+                else:
+                    callback()
+                    self.running = False
+            except Queue.Empty:
+                pass
+        LOG.exit('_MQLightSocket.queue_data', NO_CLIENT_ID, None)
+
     def loop(self):
         LOG.entry('_MQLightSocket.loop', NO_CLIENT_ID)
+        self.queue_data_thread.start()
         while self.running:
             read, write, exc = select.select([self.sock], [], [self.sock])
             if read:
                 data = self.sock.recv(4096)
                 if data:
-                    callback = threading.Thread(
-                        target=self.on_read, args=(data,
-                                                   self.data_thread))
-                    self.data_thread = callback
-                    callback.start()
+                    self.data_queue.put([self.on_read, data])
                 else:
-                    self.running = False
-                    self.data_thread.join()
-                    callback = threading.Thread(target=self.on_close)
-                    callback.start()
+                    self.data_queue.put([self.on_close, None])
         LOG.exit('_MQLightSocket.loop', NO_CLIENT_ID, None)
 
     def send(self, msg):

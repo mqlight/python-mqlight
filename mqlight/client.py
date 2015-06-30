@@ -31,6 +31,7 @@ import sys
 import codecs
 import traceback
 import time
+import Queue
 from json import loads
 from random import random
 from pkg_resources import get_distribution, DistributionNotFound
@@ -642,11 +643,7 @@ class Client(object):
         self._queued_chunks = []
         self._push_timeout = None
 
-        # Thread variables for synchronization
         self._connect_thread = None
-        self._check_thread = None
-        self._check_thread_started = threading.Event()
-        self._data_thread_started = threading.Event()
 
         # Set the initial state to starting
         self._state = STARTING
@@ -674,6 +671,14 @@ class Client(object):
         # Connection retry timer
         self._retry_timer = None
 
+        # Queue for pending actions to be processed in a separate thread
+        self.action_queue = Queue.Queue()
+
+        # Thread to process actions without blocking main thread
+        self._action_handler_thread = threading.Thread(
+                                                target=self._action_handler)
+        self._action_handler_thread.setDaemon(True)
+        self._action_handler_thread.start()
         # Heartbeat
         self._heartbeat_timeout = None
 
@@ -724,19 +729,12 @@ class Client(object):
             self._connect_thread.start()
         LOG.exit('Client.__init__', self._id, None)
 
-    def _on_read(self, chunk, data_thread=None):
+    def _queue_on_read(self, chunk):
+        self.action_queue.put((self._on_read, chunk))
+
+    def _on_read(self, chunk):
         LOG.entry_often('Client._on_read', self._id)
-        # Queue up the chunk only once the previous received chunk has
-        # been added to the queue
-        if data_thread:
-            # the second on_read call might occur before
-            # self._data_thread_started is initialized, so ensure it has
-            while not self._data_thread_started:
-                time.sleep(0.01)
-            self._data_thread_started.wait()
-            data_thread.join()
-        self._data_thread_started = threading.Event()
-        self._data_thread_started.set()
+        # Queue up the chunk
         self._queued_chunks.append(chunk)
         # Small chunks usually indicate something needing immediate
         # attention so push them immediately, whereas larger chunks may
@@ -751,6 +749,9 @@ class Client(object):
                     self._push_chunks)
                 self._push_timeout.start()
         LOG.exit_often('Client._on_read', self._id, None)
+
+    def _queue_on_close(self):
+        self.action_queue.put((self._on_close, None))
 
     def _on_close(self):
         LOG.entry('Client._on_close', self._id)
@@ -828,16 +829,19 @@ class Client(object):
             # a check.
             if self._subscriptions:
                 if self.state == STARTED:
-                    if self._check_thread:
-                        # ensure thread has started
-                        self._check_thread_started.wait()
-                        # wait until thread is finished
-                        self._check_thread.join()
-                    self._check_thread = threading.Thread(
-                        target=self._check_for_messages)
-                    self._check_thread_started.clear()
-                    self._check_thread.start()
+                        self._check_for_messages()
         LOG.exit('Client._push_chunks', self._id, None)
+
+    def _action_handler(self):
+        while True:
+            try:
+                callback, args = self.action_queue.get()
+                if args:
+                    callback(args)
+                else:
+                    callback()
+            except Queue.Empty:
+                pass
 
     def _perform_connect(self, on_started, service, new_client):
         """
@@ -1109,7 +1113,6 @@ class Client(object):
         callback set in subscribe() is called when a message is received.
         """
         LOG.entry_often('Client._check_for_messages', self._id)
-        self._check_thread_started.set()
         if self.get_state() != STARTED or not self._subscriptions:
             LOG.exit_often('Client._check_for_messages', self._id, None)
             return
@@ -1620,8 +1623,8 @@ class Client(object):
                         address,
                         tls,
                         self._security_options,
-                        self._on_read,
-                        self._on_close)
+                        self._queue_on_read,
+                        self._queue_on_close)
                     self._messenger.connect(urlparse(connect_service))
 
                     # Pass any data to proton.
