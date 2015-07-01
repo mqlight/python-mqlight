@@ -1084,8 +1084,8 @@ class _MQLightSocket(object):
         self.running = False
         self.on_read = on_read
         self.on_close = on_close
-        self.data_queue = Queue.Queue()
-        self.queue_data_thread = threading.Thread(target=self.queue_data)
+        self._data_queue = Queue.Queue()
+        self._data_handler_thread = threading.Thread(target=self.queue_data)
         try:
             self.sock = socket.socket(
                 socket.AF_INET,
@@ -1119,7 +1119,7 @@ class _MQLightSocket(object):
         LOG.entry('_MQLightSocket.queue_data', NO_CLIENT_ID)
         while self.running:
             try:
-                callback, args = self.data_queue.get(True, 1)
+                callback, args = self._data_queue.get()
                 if args:
                     callback(args)
                 # if we do not get arguments that means on_close was passed in
@@ -1132,15 +1132,15 @@ class _MQLightSocket(object):
 
     def loop(self):
         LOG.entry('_MQLightSocket.loop', NO_CLIENT_ID)
-        self.queue_data_thread.start()
+        self._data_handler_thread.start()
         while self.running:
             read, write, exc = select.select([self.sock], [], [self.sock])
             if read:
                 data = self.sock.recv(4096)
                 if data:
-                    self.data_queue.put([self.on_read, data])
+                    self._data_queue.put([self.on_read, data])
                 else:
-                    self.data_queue.put([self.on_close, None])
+                    self._data_queue.put([self.on_close, None])
         LOG.exit('_MQLightSocket.loop', NO_CLIENT_ID, None)
 
     def send(self, msg):

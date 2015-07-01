@@ -672,7 +672,7 @@ class Client(object):
         self._retry_timer = None
 
         # Queue for pending actions to be processed in a separate thread
-        self.action_queue = Queue.Queue()
+        self._action_queue = Queue.Queue()
 
         # Thread to process actions without blocking main thread
         self._action_handler_thread = threading.Thread(
@@ -730,7 +730,7 @@ class Client(object):
         LOG.exit('Client.__init__', self._id, None)
 
     def _queue_on_read(self, chunk):
-        self.action_queue.put((self._on_read, chunk))
+        self._action_queue.put((self._on_read, chunk))
 
     def _on_read(self, chunk):
         LOG.entry_often('Client._on_read', self._id)
@@ -751,7 +751,7 @@ class Client(object):
         LOG.exit_often('Client._on_read', self._id, None)
 
     def _queue_on_close(self):
-        self.action_queue.put((self._on_close, None))
+        self._action_queue.put((self._on_close, None))
 
     def _on_close(self):
         LOG.entry('Client._on_close', self._id)
@@ -835,7 +835,7 @@ class Client(object):
     def _action_handler(self):
         while True:
             try:
-                callback, args = self.action_queue.get()
+                callback, args = self._action_queue.get()
                 if args:
                     callback(args)
                 else:
