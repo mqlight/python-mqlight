@@ -1086,6 +1086,7 @@ class _MQLightSocket(object):
         self.on_close = on_close
         self._data_queue = Queue.Queue()
         self._data_handler_thread = threading.Thread(target=self.queue_data)
+        self._data_handler_thread.setDaemon(True)
         try:
             self.sock = socket.socket(
                 socket.AF_INET,
@@ -1154,5 +1155,6 @@ class _MQLightSocket(object):
     def close(self):
         LOG.entry('_MQLightSocket.close', NO_CLIENT_ID)
         self.running = False
+        self.io_loop.join()
         self.sock.close()
         LOG.exit('_MQLightSocket.close', NO_CLIENT_ID, None)
