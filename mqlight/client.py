@@ -641,7 +641,6 @@ class Client(object):
         self._sock = None
 
         self._queued_chunks = []
-        self._push_timeout = None
 
         self._connect_thread = None
 
@@ -743,15 +742,11 @@ class Client(object):
             self._push_chunks()
         else:
             # Allow more time for chunks to arrive before we process them.
-            if self._push_timeout is None:
-                self._push_timeout = threading.Timer(
-                    0.5,
-                    self._push_chunks)
-                self._push_timeout.start()
+            pass
         LOG.exit_often('Client._on_read', self._id, None)
 
     def _queue_on_close(self):
-        self._action_queue.put((self._on_close, None))
+        self._action_queue.put((self._on_close,))
 
     def _on_close(self):
         LOG.entry('Client._on_close', self._id)
@@ -777,14 +772,6 @@ class Client(object):
     def _push_chunks(self):
         LOG.entry('Client._push_chunks', self._id)
         pushed = 0
-
-        # Allow further calls to be scheduled.
-        if self._push_timeout:
-            # If we previously set a timeout to process the chunks, clear
-            # it.
-            self._push_timeout.cancel()
-
-        self._push_timeout = None
 
         # Build up a merged buffer of all the chunks
         if self._queued_chunks:
@@ -834,14 +821,12 @@ class Client(object):
 
     def _action_handler(self):
         while True:
-            try:
-                callback, args = self._action_queue.get()
-                if args:
-                    callback(args)
-                else:
-                    callback()
-            except Queue.Empty:
-                pass
+            args = self._action_queue.get()
+            callback = args[0]
+            if len(args) > 1:
+                callback(*args[1:])
+            else:
+                callback()
 
     def _perform_connect(self, on_started, service, new_client):
         """
