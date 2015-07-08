@@ -735,14 +735,7 @@ class Client(object):
         LOG.entry_often('Client._on_read', self._id)
         # Queue up the chunk
         self._queued_chunks.append(chunk)
-        # Small chunks usually indicate something needing immediate
-        # attention so push them immediately, whereas larger chunks may
-        # simply be part of a larger message.
-        if len(chunk) < 1024:
-            self._push_chunks()
-        else:
-            # Allow more time for chunks to arrive before we process them.
-            pass
+        self._push_chunks()
         LOG.exit_often('Client._on_read', self._id, None)
 
     def _queue_on_close(self):
