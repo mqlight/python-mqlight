@@ -92,7 +92,7 @@ setup(
     long_description=LONG_DESCRIPTION,
     url='https://developer.ibm.com/messaging/mq-light/',
     author='IBM',
-    author_email=' ',
+    author_email='mqlight@uk.ibm.com',
     license='proprietary',
     classifiers=[
         'Development Status :: 4 - Beta',
