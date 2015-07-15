@@ -151,7 +151,7 @@ if args.file is not None:
     with open(args.file, 'rb') as f:
         byte = f.read(1)
         while byte:
-            message.append(byte)
+            message.append(ord(byte))
             byte = f.read(1)
     if len(message) == 0:
         close(1, 'An error happened while reading {0}'.format(args.file))
