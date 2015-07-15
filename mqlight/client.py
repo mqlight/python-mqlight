@@ -533,7 +533,8 @@ class Client(object):
         service_function = None
         if hasattr(service, '__call__'):
             service_function = service
-        elif isinstance(service, str):
+        # tolerate both str and unicode input
+        elif isinstance(service, str) or isinstance(service, unicode):
             service_url = urlparse(service)
             if service_url.scheme in ('http', 'https'):
                 service_function = _get_http_service_function(
