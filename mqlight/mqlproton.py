@@ -70,7 +70,7 @@ class _MQLightMessage(object):
         LOG.entry('_MQLightMessage._set_body', NO_CLIENT_ID)
         LOG.parms(NO_CLIENT_ID, 'value:', value)
         if self._msg:
-            if isinstance(value, str):
+            if isinstance(value, str) or isinstance(value, unicode):
                 LOG.data(NO_CLIENT_ID, 'setting the body format as text')
                 cproton.pn_message_set_format(self._msg, cproton.PN_TEXT)
                 cproton.pn_message_load_text(self._msg, str(value))
