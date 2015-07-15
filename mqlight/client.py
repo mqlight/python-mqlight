@@ -2194,10 +2194,18 @@ class Client(object):
                     'on_sent': on_sent
                 })
 
+            self._queued_send_callbacks.append({
+                'body': msg.body,
+                'on_sent': on_sent,
+                'error': err,
+                'options': options,
+                'qos': qos,
+                'topic': topic
+            })
             # Reconnect can result in many callbacks being fired in a single
             # tick, group these together into a single chunk to avoid them
             # being spread out over a, potentially, long period of time.
-            if not self._queued_send_callbacks:
+            if len(self._queued_send_callbacks) <= 1:
                 def immediate():
                     do_reconnect = False
                     while self._queued_send_callbacks:
@@ -2226,15 +2234,6 @@ class Client(object):
                         self._reconnect()
                 timer = threading.Thread(target=immediate)
                 timer.start()
-
-            self._queued_send_callbacks.append({
-                'body': msg.body,
-                'on_sent': on_sent,
-                'error': err,
-                'options': options,
-                'qos': qos,
-                'topic': topic
-            })
 
         LOG.exit('Client.send', self._id, next_message)
         return next_message
