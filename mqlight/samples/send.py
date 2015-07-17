@@ -188,7 +188,6 @@ def state_changed(client, state, msg=None):
         close(1, msg)
     elif state == mqlight.DRAIN:
         send_complete.set()
-        send_message()
 
 
 def send_message():
@@ -215,7 +214,7 @@ def send_message():
             else:
                 # There's a backlog of messages to send, so wait until the
                 # backlog is cleared before sending any more
-                send_complete.wait(TIMEOUT)
+                send_complete.wait()
 
 
 def sent(err, topic, data, options):

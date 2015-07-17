@@ -659,6 +659,7 @@ class Client(object):
         # List of outstanding send operations waiting to be accepted, settled,
         # etc by the listener
         self._outstanding_sends = []
+        self._next_message = True
 
         # List of queued sends for resending on a reconnect
         self._queued_sends = []
@@ -1866,7 +1867,7 @@ class Client(object):
             invalid.
         """
         LOG.entry('Client.send', self._id)
-        next_message = False
+        self._next_message = False
         # Validate the passed parameters
         if topic is None:
             raise TypeError('Cannot send to None topic')
@@ -1936,7 +1937,16 @@ class Client(object):
             self._on_drain_required = True
             LOG.exit('Client.send', self._id, False)
             return False
+        self._action_queue.put((self._send,
+                                topic, data, options, on_sent, qos, ttl))
+        LOG.exit('Client.send', self._id, self._next_message)
+        return self._next_message
 
+    def _send(self, topic, data, options, on_sent, qos, ttl):
+        """
+        The internals of the send method that takes place without
+        blocking the main thread.
+        """
         # Send the data as a message to the specified topic
         msg = None
         in_outstanding_sends = False
@@ -2081,10 +2091,8 @@ class Client(object):
                                     # Can't make any more progress for now -
                                     # schedule remaining work for processing in
                                     # the future
-                                    timer = threading.Timer(
-                                        0.1,
-                                        send_outbound_msg)
-                                    timer.start()
+                                    self._action_queue.put((
+                                        send_outbound_msg,))
                                     LOG.exit_often(
                                         'Client.send.send_outbound_msg',
                                         self._id,
@@ -2173,8 +2181,8 @@ class Client(object):
                 self._id,
                 'outstandingSends:',
                 len(self._outstanding_sends))
-            if len(self._outstanding_sends) <= 1:
-                next_message = True
+            if len(self._outstanding_sends) < 1:
+                self._next_message = True
             else:
                 self._on_drain_required = True
 
@@ -2235,9 +2243,6 @@ class Client(object):
                         self._reconnect()
                 timer = threading.Thread(target=immediate)
                 timer.start()
-
-        LOG.exit('Client.send', self._id, next_message)
-        return next_message
 
     def subscribe(
             self,
