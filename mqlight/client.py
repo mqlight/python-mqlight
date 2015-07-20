@@ -561,7 +561,7 @@ class Client(object):
         if len(client_id) > self._client_id_max_len:
             error = InvalidArgumentError(
                 'Client identifier {0} is longer than the maximum ID length '
-                'of 48'.format(client_id))
+                'of {1}'.format(client_id, self._client_id_max_len))
             LOG.error('Client.__init__', NO_CLIENT_ID, error)
             raise error
 
