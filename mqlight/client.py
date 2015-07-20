@@ -557,7 +557,8 @@ class Client(object):
         client_id = str(client_id)
 
         # If the client id is incorrectly formatted then throw an error
-        if len(client_id) > 48:
+        self._client_id_max_len = 256
+        if len(client_id) > self._client_id_max_len:
             error = InvalidArgumentError(
                 'Client identifier {0} is longer than the maximum ID length '
                 'of 48'.format(client_id))
