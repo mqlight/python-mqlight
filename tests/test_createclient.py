@@ -439,6 +439,32 @@ class TestCreateClient(object):
 
         test_is_done.wait(self.TEST_TIMEOUT)
         assert test_is_done.is_set()
+    
+
+    def test_client_id_limit(self):
+        """
+        Test that you can set the client ID to the maximum limit, 
+        but no longer than that
+        """
+        test_is_done = threading.Event()
+        client_id = "A"*256
+        service = 'amqp://host:1234'
+
+        def started(client):
+            """started listener"""
+            client.stop()
+
+        with pytest.raises(InvalidArgumentError):
+            client = mqlight.Client(
+                service=service,
+                client_id=client_id+"A")
+        client = mqlight.Client(
+                service=service,
+                client_id=client_id,
+                on_started=started)
+        test_is_done.set()
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
 if __name__ == 'main':
     unittest.main()
