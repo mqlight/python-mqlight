@@ -141,7 +141,8 @@ setup(
         'pytest_pep8',
         'pytest_timeout',
         'pytest',
-        'mock'],
+        'mock',
+        'pbr==1.6.0'],
     cmdclass={
         'test': PyTest}
 )
