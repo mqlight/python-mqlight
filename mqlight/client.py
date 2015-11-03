@@ -1608,11 +1608,10 @@ class Client(object):
                         self._queue_on_close)
                     self._messenger.connect(urlparse(connect_service))
 
-                    # Pass any data to proton.
-                    self._messenger.pop(self._sock, False)
-
                     # Wait for client to start
                     while not self._messenger.started():
+                        # Pass any data to proton.
+                        self._messenger.pop(self._sock, False)
                         if self.state not in (RETRYING, STARTING):
                             # Don't keep waiting if we're no longer in a
                             # starting state

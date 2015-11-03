@@ -70,16 +70,14 @@ class _MQLightMessage(object):
         LOG.entry('_MQLightMessage._set_body', NO_CLIENT_ID)
         LOG.parms(NO_CLIENT_ID, 'value:', value)
         if self._msg:
+            body = cproton.pn_message_body(self._msg)
             if isinstance(value, str) or isinstance(value, unicode):
                 LOG.data(NO_CLIENT_ID, 'setting the body format as text')
-                cproton.pn_message_set_format(self._msg, cproton.PN_TEXT)
-                cproton.pn_message_load_text(self._msg, str(value))
+                cproton.pn_data_put_string(body, str(value))
             else:
                 LOG.data(NO_CLIENT_ID, 'setting the body format as data')
-                cproton.pn_message_set_format(self._msg, cproton.PN_DATA)
-                cproton.pn_message_load_data(
-                    self._msg,
-                    ''.join(chr(i % 256) for i in value))
+                cproton.pn_data_put_binary(body, ''.join(chr(i % 256) for i in
+                                                         value))
             self._body = self._get_body()
             LOG.data(NO_CLIENT_ID, 'body:', self._body)
         LOG.exit('_MQLightMessage._set_body', NO_CLIENT_ID, None)
@@ -98,20 +96,10 @@ class _MQLightMessage(object):
                 data_type = cproton.pn_data_type(body)
                 LOG.data(NO_CLIENT_ID, 'data_type:', data_type)
                 if data_type == cproton.PN_STRING:
-                    cproton.pn_message_set_format(self._msg, cproton.PN_TEXT)
+                    result = cproton.pn_data_get_string(body).decode('utf8')
                 else:
-                    cproton.pn_message_set_format(self._msg, cproton.PN_DATA)
-
-                size = 16
-                while True:
-                    err, result = cproton.pn_message_save(self._msg, size)
-                    if err == cproton.PN_OVERFLOW:
-                        size *= 2
-                        continue
-                    else:
-                        break
-                if data_type == cproton.PN_BINARY:
-                    result = [ord(byte) for byte in list(result)]
+                    result = cproton.pn_data_get_binary(body)
+                    #result = [ord(byte) for byte in list(result)]
             else:
                 result = self._body
         LOG.exit('_MQLightMessage._get_body', NO_CLIENT_ID, result)
@@ -333,6 +321,7 @@ class _MQLightMessenger(object):
         LOG.parms(NO_CLIENT_ID, 'name:', name)
         self.messenger = None
         self.connection = None
+        self.sasl_outcome = cproton.PN_SASL_NONE
         self._name = name
         self._lock = threading.RLock()
         LOG.exit('_MQLightMessenger.constructor', NO_CLIENT_ID, None)
@@ -343,7 +332,7 @@ class _MQLightMessenger(object):
         Parses an error message from messenger and raises the corresponding
         Error
         """
-        if ' sasl ' in text or 'SSL ' in text:
+        if 'sasl ' in text or 'SSL ' in text:
             raise SecurityError(text)
 
         if '_Takeover' in text:
@@ -466,13 +455,26 @@ class _MQLightMessenger(object):
         """
         LOG.entry('_MQLightMessenger.started', NO_CLIENT_ID)
         if self.messenger is not None:
-            started = cproton.pn_messenger_started(self.messenger)
+            if self.connection:
+                transport = cproton.pn_connection_transport(self.connection)
+                self._update_sasl_outcome(transport)
+
             error = cproton.pn_messenger_errno(self.messenger)
+
             if error:
                 text = cproton.pn_error_text(
                     cproton.pn_messenger_error(
                         self.messenger))
                 _MQLightMessenger._raise_error(text)
+            # FIXME: these should really come from pn_messenger_error
+            elif self.sasl_outcome == cproton.PN_SASL_AUTH:
+                _MQLightMessenger._raise_error('sasl authentication failed')
+            elif self.sasl_outcome > cproton.PN_SASL_AUTH:
+                _MQLightMessenger._raise_error('sasl negotiation failed')
+
+            started = cproton.pn_messenger_started(self.messenger) and \
+                self.sasl_outcome != cproton.PN_SASL_NONE
+
         else:
             started = False
         LOG.exit('_MQLightMessenger.started', NO_CLIENT_ID, started)
@@ -1016,6 +1018,20 @@ class _MQLightMessenger(object):
         LOG.exit('_MQLightMessenger.push', NO_CLIENT_ID, pushed)
         return pushed
 
+    def _update_sasl_outcome(self, transport):
+        """
+        Retrieves and stores the sasl outcome from the transport
+        """
+        LOG.entry('_update_sasl_outcome', NO_CLIENT_ID)
+        if transport:
+            self.sasl_outcome = cproton.pn_sasl_outcome(
+                cproton.pn_sasl(transport))
+            LOG.data(NO_CLIENT_ID, 'outcome:', self.sasl_outcome)
+        else:
+            LOG.data(NO_CLIENT_ID, 'connection is closed')
+
+        LOG.exit('_update_sasl_outcome', NO_CLIENT_ID, None)
+
     def _write(self, sock, force):
         LOG.entry_often('_MQLightMessenger._write', NO_CLIENT_ID)
         LOG.parms(NO_CLIENT_ID, 'force:', force)
@@ -1033,6 +1049,7 @@ class _MQLightMessenger(object):
                         closed = cproton.pn_connection_pop(self.connection, 0)
                         if closed:
                             LOG.data(NO_CLIENT_ID, 'connection is closed')
+                            self._update_sasl_outcome(transport)
                             self.connection = None
 
                     if self.connection and n > 0:
@@ -1043,6 +1060,7 @@ class _MQLightMessenger(object):
                         closed = cproton.pn_connection_pop(self.connection, n)
                         if closed:
                             LOG.data(NO_CLIENT_ID, 'connection is closed')
+                            self._update_sasl_outcome(transport)
                             self.connection = None
                     else:
                         n = 0
