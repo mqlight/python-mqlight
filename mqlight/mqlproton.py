@@ -99,7 +99,6 @@ class _MQLightMessage(object):
                     result = cproton.pn_data_get_string(body).decode('utf8')
                 else:
                     result = cproton.pn_data_get_binary(body)
-                    #result = [ord(byte) for byte in list(result)]
             else:
                 result = self._body
         LOG.exit('_MQLightMessage._get_body', NO_CLIENT_ID, result)

@@ -213,4 +213,3 @@ try:
         on_state_changed=state_changed)
 except Exception as exc:
     close(1, exc)
-
