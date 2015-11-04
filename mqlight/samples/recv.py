@@ -114,7 +114,7 @@ verbose = args.verbose
 def close(rc, err=None):
     if err:
         print('*** error ***', file=sys.stderr)
-        print(err, file=sys.stderr)
+        print('{0}: {1}'.format(type(err).__name__, err), file=sys.stderr)
     if client:
         client.stop()
     print('Exiting.')
@@ -173,9 +173,9 @@ def message(message_type, data, delivery):
     Message callback
     """
     if message_type == mqlight.MALFORMED:
-        malformed_message = '*** received malformed message ***'
-        +"\n"+'data: {0}'.format(data)
-        +"\n"+'delivery: {0}'.format(delivery)
+        malformed_message = '*** received malformed message ***' + \
+            "\n"+'data: {0}'.format(data) + \
+            "\n"+'delivery: {0}'.format(delivery)
         print(malformed_message, file=sys.stderr)
     else:
         global COUNT

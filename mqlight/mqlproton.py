@@ -14,7 +14,6 @@
 # IBM Corp.
 # </copyright>
 from __future__ import division, absolute_import
-import os
 import socket
 import ssl
 import select
@@ -1150,7 +1149,8 @@ class _MQLightSocket(object):
     def loop(self):
         LOG.entry('_MQLightSocket.loop', NO_CLIENT_ID)
         self._data_handler_thread.start()
-        while self.running:
+        exc = None
+        while self.running and not exc:
             read, write, exc = select.select([self.sock], [], [self.sock])
             if read:
                 data = self.sock.recv(4096)
@@ -1171,6 +1171,7 @@ class _MQLightSocket(object):
     def close(self):
         LOG.entry('_MQLightSocket.close', NO_CLIENT_ID)
         self.running = False
+        self.sock.shutdown(socket.SHUT_RD)
         self.io_loop.join()
         self.sock.close()
         LOG.exit('_MQLightSocket.close', NO_CLIENT_ID, None)

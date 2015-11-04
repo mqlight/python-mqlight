@@ -128,7 +128,7 @@ PENDING = len(messages)
 def close(rc, err=None):
     if err:
         print('*** error ***', file=sys.stderr)
-        print(err, file=sys.stderr)
+        print('{0}: {1}'.format(type(err).__name__, err), file=sys.stderr)
     if client:
         client.stop()
     print('Exiting.')

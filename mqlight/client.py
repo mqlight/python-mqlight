@@ -194,7 +194,8 @@ def _should_reconnect(error):
     for the given type of error.
     """
     LOG.entry('_should_reconnect', NO_CLIENT_ID)
-    result = type(error) not in (
+    LOG.parms(NO_CLIENT_ID, 'error:', type(error))
+    result = not isinstance(error, (
         TypeError,
         InvalidArgumentError,
         NotPermittedError,
@@ -202,7 +203,7 @@ def _should_reconnect(error):
         StoppedError,
         SubscribedError,
         UnsubscribedError,
-        MQLightError)
+        MQLightError))
     LOG.exit('_should_reconnect', NO_CLIENT_ID, result)
     return result
 
@@ -1705,11 +1706,7 @@ class Client(object):
                     traceback.format_exc())
                 raise MQLightError(exc)
 
-        if not connected and self.state not in (STOPPING, STOPPED):
-            # We've tried all services without success. Pause for a while
-            # before trying again
-            self._set_state(RETRYING)
-
+        if not connected and not self.is_stopped():
             def retry():
                 LOG.entry_often('Client._connect_to_service.retry', self._id)
                 if not self.is_stopped():
@@ -1719,22 +1716,28 @@ class Client(object):
                     self._id,
                     None)
 
-            self._retry_count += 1
-            retry_cap = 60
-            # limit to the power of 8 as anything above this will put the
-            # interval higher than the cap straight away.
-            exponent = self._retry_count if self._retry_count <= 8 else 8
-            upper_bound = pow(2, exponent)
-            lower_bound = 0.75 * upper_bound
-            jitter = random() * (0.25 * upper_bound)
-            interval = min(retry_cap, (lower_bound + jitter))
-            # times by CONNECT_RETRY_INTERVAL for unittest purposes
-            interval = round(interval) * CONNECT_RETRY_INTERVAL
-            LOG.data(
-                self._id,
-                'trying to connect again after {0} seconds'.format(interval))
-            self._retry_timer = threading.Timer(interval, retry)
-            self._retry_timer.start()
+            if _should_reconnect(error):
+                # We've tried all services without success. Pause for a while
+                # before trying again
+                self._set_state(RETRYING)
+
+                self._retry_count += 1
+                retry_cap = 60
+                # limit to the power of 8 as anything above this will put the
+                # interval higher than the cap straight away.
+                exponent = self._retry_count if self._retry_count <= 8 else 8
+                upper_bound = pow(2, exponent)
+                lower_bound = 0.75 * upper_bound
+                jitter = random() * (0.25 * upper_bound)
+                interval = min(retry_cap, (lower_bound + jitter))
+                # times by CONNECT_RETRY_INTERVAL for unittest purposes
+                interval = round(interval) * CONNECT_RETRY_INTERVAL
+                LOG.data(
+                    self._id,
+                    'trying to connect again after {0} seconds'.format(
+                        interval))
+                self._retry_timer = threading.Timer(interval, retry)
+                self._retry_timer.start()
 
             if error:
                 def next_tick():
