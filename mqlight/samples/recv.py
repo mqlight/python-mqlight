@@ -185,7 +185,7 @@ def message(message_type, data, delivery):
         if args.file:
             print('Writing message data to {0}'.format(args.file))
             with open(args.file, 'wb') as f:
-                f.write(''.join(data))
+                f.write(''.join(chr(byte) for byte in data))
             delivery['message']['confirm_delivery']()
             client.stop()
         else:

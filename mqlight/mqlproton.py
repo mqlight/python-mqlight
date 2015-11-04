@@ -98,7 +98,8 @@ class _MQLightMessage(object):
                 if data_type == cproton.PN_STRING:
                     result = cproton.pn_data_get_string(body).decode('utf8')
                 else:
-                    result = cproton.pn_data_get_binary(body)
+                    result = [ord(str(byte)) for byte in
+                              list(cproton.pn_data_get_binary(body))]
             else:
                 result = self._body
         LOG.exit('_MQLightMessage._get_body', NO_CLIENT_ID, result)
