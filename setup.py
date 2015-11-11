@@ -73,7 +73,7 @@ class PyTest(TestCommand):
         TestCommand.finalize_options(self)
 
     def run_tests(self):
-        environ['MQLIGHT_PYTHON_LOG'] = 'ALL'
+        # environ['MQLIGHT_PYTHON_LOG'] = 'ALL'
         import pytest
         # self.pytest_args.insert(0, 'tests/test_unsubscribe.py')
         self.pytest_args.insert(0, '--junitxml=junit.xml')

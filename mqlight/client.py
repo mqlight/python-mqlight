@@ -51,7 +51,6 @@ from .logging import get_logger, NO_CLIENT_ID
 
 CMD = ' '.join(sys.argv)
 if 'setup.py test' in CMD or 'py.test' in CMD or 'unittest' in CMD:
-    #from .stubmqlproton import _MQLightMessenger, _MQLightMessage,
     from .stubmqlproton import _MQLightMessenger, \
         _MQLightSocket, QOS_AT_MOST_ONCE, QOS_AT_LEAST_ONCE
     from .mqlproton import _MQLightMessage
