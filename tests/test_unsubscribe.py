@@ -19,18 +19,13 @@ IBM Corp.
 # pylint: disable=too-many-public-methods,unused-argument
 import pytest
 import threading
-from mock import Mock, patch
+from mock import Mock
 import mqlight
-from mqlight.exceptions import StoppedError, RangeError,InvalidArgumentError, \
-    UnsubscribedError
+from mqlight.exceptions import StoppedError, RangeError, InvalidArgumentError,\
+    UnsubscribedError, MQLightError
 
 
-@patch('mqlight.mqlproton._MQLightMessenger.connect',
-       Mock())
-@patch('mqlight.mqlproton._MQLightMessenger.get_remote_idle_timeout',
-       Mock(return_value=0))
 class TestUnsubscribe(object):
-
     """
     Unit tests for client.unsubscribe()
     """
@@ -72,6 +67,14 @@ class TestUnsubscribe(object):
         test_is_done.wait(self.TEST_TIMEOUT)
         assert test_is_done.is_set()
 
+    class Counter(object):
+        def __init__(self, count):
+            self.count = count
+
+        def decrementAndGet(self):
+            self.count -= 1
+            return self.count
+
     def test_unsubscribe_callback_must_be_function(self):
         """
         Test that the callback argument to client.unsubscribe(...) must be a
@@ -85,7 +88,12 @@ class TestUnsubscribe(object):
 
         def started(client):
             """started listener"""
-            func = Mock()
+            COUNTER = self.Counter(3)
+
+            def func(*args):
+                if COUNTER.decrementAndGet() <= 0:
+                    client.stop(on_stopped=on_stopped)
+
             def subscribed1(err, pattern, share):
                 with pytest.raises(TypeError):
                     client.unsubscribe('/foo1', 'share', {}, on_unsubscribed=7)
@@ -102,8 +110,6 @@ class TestUnsubscribe(object):
             def subscribed4(err, pattern, share):
                 client.unsubscribe('/foo4', 'share', {}, on_unsubscribed=func)
             client.subscribe('/foo4', 'share', on_subscribed=subscribed4)
-
-            client.stop(on_stopped=on_stopped)
 
         client = mqlight.Client(
             'amqp://host',
@@ -231,12 +237,11 @@ class TestUnsubscribe(object):
         TypeError.
         """
         test_is_done = threading.Event()
-        func = Mock()
         data = [
             {'valid': False, 'pattern': ''},
             {'valid': False, 'pattern': None},
             {'valid': True, 'pattern': 1234},
-            {'valid': True, 'pattern': func},
+            {'valid': True, 'pattern': lambda *args: 'topic'},
             {'valid': True, 'pattern': 'kittens'},
             {'valid': True, 'pattern': '/kittens'},
             {'valid': True, 'pattern': '+'},
@@ -250,13 +255,16 @@ class TestUnsubscribe(object):
             try:
                 for test in data:
                     if test['valid']:
-                        client.subscribe(test['pattern'])
-                        client.unsubscribe(test['pattern'])
+                        test_pattern = test['pattern']
+                        client.subscribe(
+                            test['pattern'],
+                            on_subscribed=lambda pattern=test_pattern:
+                            client.unsubscribe(pattern))
                     else:
-                        with pytest.raises(MQLightError):
+                        with pytest.raises(TypeError):
                             client.unsubscribe(test['pattern'])
-            except:
-                pytest.fail('Unexpected Exception')
+            except Exception as exc:
+                pytest.fail('Unexpected Exception ' + str(exc))
             finally:
                 client.stop()
                 test_is_done.set()
@@ -287,13 +295,17 @@ class TestUnsubscribe(object):
             try:
                 for test in data:
                     if test['valid']:
-                        client.subscribe('/foo', test['share'])
-                        client.unsubscribe('/foo', test['share'])
+                        test_share = test['share']
+                        client.subscribe(
+                            '/foo',
+                            test_share,
+                            on_subscribed=lambda share=test_share:
+                            client.unsubscribe('/foo', share))
                     else:
                         with pytest.raises(InvalidArgumentError):
                             client.unsubscribe('/foo', test['share'])
-            except:
-                pytest.fail('Unexpected Exception')
+            except Exception as exc:
+                pytest.fail('Unexpected Exception ' + str(exc))
             finally:
                 client.stop()
                 test_is_done.set()
@@ -331,21 +343,28 @@ class TestUnsubscribe(object):
         def started(client):
             """started listener"""
             try:
+                test_pattern = 0
                 for test in data:
                     if test['valid']:
-                        client.subscribe('testpattern', 'share')
-                        client.unsubscribe('testpattern',
-                                           'share',
-                                           test['options'],
-                                           func)
+                        test_pattern += 1
+                        test_options = test['options']
+                        client.subscribe(
+                            test_pattern,
+                            'share',
+                            on_subscribed=lambda pattern=test_pattern, options=test_options:
+                            client.unsubscribe(
+                                pattern,
+                                'share',
+                                options,
+                                func))
                     else:
                         with pytest.raises(TypeError):
                             client.unsubscribe('testpattern',
                                                'share',
                                                test['options'],
                                                func)
-            except:
-                pytest.fail('Unexpected Exception')
+            except Exception as exc:
+                pytest.fail('Unexpected Exception ' + str(exc))
             finally:
                 client.stop()
                 test_is_done.set()
@@ -384,15 +403,20 @@ class TestUnsubscribe(object):
             """started listener"""
             try:
                 for test in data:
-                    opts = {'ttl': test['ttl']}
+                    test_opts = {'ttl': test['ttl']}
                     if test['valid']:
-                        client.subscribe('testpattern')
-                        client.unsubscribe('testpattern', opts)
+                        client.subscribe(
+                            'testpattern',
+                            on_subscribed=lambda opts=test_opts:
+                            client.unsubscribe(
+                                'testpattern', options=opts)
+                        )
                     else:
                         with pytest.raises(RangeError):
-                            client.unsubscribe('testpattern', opts)
-            except:
-                pytest.fail('Unexpected Exception')
+                            client.unsubscribe(
+                                'testpattern', options=test_opts)
+            except Exception as exc:
+                pytest.fail('Unexpected Exception ' + str(exc))
             finally:
                 client.stop()
                 test_is_done.set()

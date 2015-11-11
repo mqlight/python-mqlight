@@ -23,8 +23,6 @@ from mock import Mock, patch
 import mqlight
 
 
-@patch('mqlight.mqlproton._MQLightMessenger.connect',
-       Mock(return_value=None))
 class TestStop(object):
 
     """

@@ -1,13 +1,13 @@
 # <copyright
 # notice="lm-source-program"
 # pids="5725-P60"
-# years="2013,2014"
+# years="2013,2015"
 # crc="3568777996" >
 # Licensed Materials - Property of IBM
 #
 # 5725-P60
 #
-# (C) Copyright IBM Corp. 2013, 2014
+# (C) Copyright IBM Corp. 2013, 2015
 #
 # US Government Users Restricted Rights - Use, duplication or
 # disclosure restricted by GSA ADP Schedule Contract with
@@ -26,7 +26,6 @@ QOS_AT_LEAST_ONCE = 1
 
 
 class _MQLightMessage(object):
-
     """
     Wrapper for the Proton Message class
     """
@@ -37,6 +36,25 @@ class _MQLightMessage(object):
         MQLight Message constructor
         """
         LOG.data(NO_CLIENT_ID, '_MQLightMessage.constructor called')
+
+    def _set_body(self, value):
+        """
+        Handles body data type and encoding
+        """
+        LOG.data(NO_CLIENT_ID, '_MQLightMessage._set_body called')
+
+    def _get_body(self):
+        """
+        Handles body data type and encoding
+        """
+        LOG.data(NO_CLIENT_ID, '_MQLightMessage._get_body called')
+        return None
+
+    body = property(_get_body, _set_body)
+    annotations = property((lambda s: None), (lambda s, v: None))
+    content_type = property((lambda s: None), (lambda s, v: None))
+    ttl = property((lambda s: None), (lambda s, v: None))
+    address = property((lambda s: None), (lambda s, v: None))
 
     def _set_tracker(self, tracker):
         """
@@ -339,7 +357,7 @@ class _MQLightSocket(object):
         elif security_options.ssl_trust_certificate == 'BadVerify2' and verify:
             err = MQLightError('Bad verify name')
         elif CONNECT_STATUS != 0:
-            err = MQLightError('connect error: ' + CONNECT_STATUS)
+            err = NetworkError('connect error: ' + str(CONNECT_STATUS))
 
         if err:
             LOG.data(NO_CLIENT_ID, 'connection error', err)

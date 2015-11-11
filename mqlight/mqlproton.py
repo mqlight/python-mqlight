@@ -39,7 +39,6 @@ QOS_AT_LEAST_ONCE = 1
 
 
 class _MQLightMessage(object):
-
     """
     Wrapper for the Proton Message class
     """

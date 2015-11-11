@@ -30,12 +30,7 @@ def side_effect(service, ssl_trust_certificate, ssl_verify_name):
         raise TypeError('bad service ' + service.netloc)
 
 
-@patch('mqlight.mqlproton._MQLightMessenger.connect',
-       Mock(side_effect=side_effect))
-@patch('mqlight.mqlproton._MQLightMessenger.get_remote_idle_timeout',
-       Mock(return_value=0))
 class TestStart(object):
-
     """
     Unit tests for client.start()
     """
@@ -54,7 +49,6 @@ class TestStart(object):
 
             def stopped(client):
                 """stopped listener"""
-                assert err is None
                 assert client.get_state() == mqlight.STOPPED
                 test_is_done.set()
             client.stop(stopped)

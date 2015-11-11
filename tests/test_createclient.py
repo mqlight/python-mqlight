@@ -28,8 +28,6 @@ import mqlight
 from mqlight.exceptions import SecurityError, InvalidArgumentError
 
 
-@patch('mqlight.mqlproton._MQLightMessenger.connect',
-       Mock(return_value=None))
 class TestCreateClient(object):
 
     """
@@ -51,8 +49,6 @@ class TestCreateClient(object):
             assert client.get_service() == service
             client.stop()
             test_is_done.set()
-            assert client.get_state() in (mqlight.STARTING, mqlight.STARTED)
-            assert client.get_id() == client_id
 
         client = mqlight.Client(
             service=service,
@@ -439,11 +435,11 @@ class TestCreateClient(object):
 
         test_is_done.wait(self.TEST_TIMEOUT)
         assert test_is_done.is_set()
-    
+
 
     def test_client_id_limit(self):
         """
-        Test that you can set the client ID to the maximum limit, 
+        Test that you can set the client ID to the maximum limit,
         but no longer than that
         """
         test_is_done = threading.Event()
@@ -459,9 +455,9 @@ class TestCreateClient(object):
                 service=service,
                 client_id=client_id+"A")
         client = mqlight.Client(
-                service=service,
-                client_id=client_id,
-                on_started=started)
+            service=service,
+            client_id=client_id,
+            on_started=started)
         test_is_done.set()
         test_is_done.wait(self.TEST_TIMEOUT)
         assert test_is_done.is_set()

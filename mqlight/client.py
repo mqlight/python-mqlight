@@ -50,9 +50,11 @@ from .exceptions import MQLightError, InvalidArgumentError, RangeError, \
 from .logging import get_logger, NO_CLIENT_ID
 
 CMD = ' '.join(sys.argv)
-if 'setup.py test' in CMD or 'unittest' in CMD:
-    from .stubmqlproton import _MQLightMessenger, _MQLightMessage, \
+if 'setup.py test' in CMD or 'py.test' in CMD or 'unittest' in CMD:
+    #from .stubmqlproton import _MQLightMessenger, _MQLightMessage,
+    from .stubmqlproton import _MQLightMessenger, \
         _MQLightSocket, QOS_AT_MOST_ONCE, QOS_AT_LEAST_ONCE
+    from .mqlproton import _MQLightMessage
     # The connection retry interval in seconds
     CONNECT_RETRY_INTERVAL = 1
 else:
@@ -202,8 +204,7 @@ def _should_reconnect(error):
         ReplacedError,
         StoppedError,
         SubscribedError,
-        UnsubscribedError,
-        MQLightError))
+        UnsubscribedError))
     LOG.exit('_should_reconnect', NO_CLIENT_ID, result)
     return result
 
@@ -817,7 +818,7 @@ class Client(object):
         LOG.exit('Client._push_chunks', self._id, None)
 
     def _action_handler(self):
-        while True:
+        while self.state not in STOPPED:
             args = self._action_queue.get()
             callback = args[0]
             if len(args) > 1:
@@ -848,10 +849,10 @@ class Client(object):
             LOG.data(
                 self._id,
                 'Not connecting because client has been replaced')
-            if on_state_changed:
+            if self._on_state_changed:
                 err = LocalReplacedError()
                 LOG.entry('Client._perform_connect.on_state_changed', self._id)
-                on_state_changed(self, ERROR, err)
+                self._on_state_changed(self, ERROR, err)
                 LOG.exit('Client.perform_connect.on_state_changed',
                          self._id, None)
             LOG.exit('Client._perform_connect', self._id, None)
@@ -928,7 +929,8 @@ class Client(object):
                         self._connect_to_service(on_started)
                     except Exception as exc:
                         ACTIVE_CLIENTS.remove(self._id)
-                        on_state_changed(self, ERROR, exc)
+                        if self._on_state_changed:
+                            self._on_state_changed(self, ERROR, exc)
                 LOG.exit(
                     'Client._perform_connect._callback',
                     self._id,
@@ -943,8 +945,8 @@ class Client(object):
             except Exception as exc:
                 ACTIVE_CLIENTS.remove(self._id)
                 LOG.error('Client._perform_connect', self._id, exc)
-                if on_started:
-                    on_state_changed(self, ERROR, exc)
+                if on_started and self._on_state_changed:
+                    self._on_state_changed(self, ERROR, exc)
         LOG.exit('Client._perform_connect', self._id, None)
 
     def start(self, on_started=None):
@@ -968,6 +970,13 @@ class Client(object):
         :raises TypeError: if on_started is not a function.
         """
         LOG.entry('Client.start', self._id)
+
+        if self.get_state in (STARTING, STARTED):
+            LOG.exit('Client.start', self._id, self)
+            return self
+
+        if not self._action_handler_thread.is_alive():
+            self._action_handler_thread.start()
 
         if on_started and not hasattr(on_started, '__call__'):
             error = TypeError('on_started must be a function')
@@ -1471,6 +1480,9 @@ class Client(object):
 
                 # Indicate that we've disconnected
                 client._set_state(STOPPED)
+
+                # Wakeup the action_handler_thread
+                self._action_queue.put((lambda *args: None,))
 
                 # Remove ourself from the active client list
                 active_client = ACTIVE_CLIENTS.get(self._id)
@@ -2313,7 +2325,7 @@ class Client(object):
         LOG.parms(self._id, 'share:', share)
 
         # Validate the options parameter, when specified
-        if options:
+        if options is not None:
             if isinstance(options, dict):
                 LOG.parms(self._id, 'options:', options)
             else:
@@ -2544,7 +2556,7 @@ class Client(object):
         LOG.entry('Client.unsubscribe', self._id)
         LOG.parms(self._id, 'topic_pattern:', topic_pattern)
 
-        if topic_pattern is None:
+        if topic_pattern is None or topic_pattern == '':
             err = TypeError('You must specify a topic_pattern argument')
             LOG.error('Client.unsubscribe', self._id, err)
             raise err
@@ -2567,7 +2579,7 @@ class Client(object):
         LOG.parms(self._id, 'share:', share)
 
         # Validate the options parameter, when specified
-        if options:
+        if options is not None:
             if isinstance(options, dict):
                 LOG.parms(self._id, 'options:', options)
             else:

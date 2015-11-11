@@ -21,11 +21,10 @@ import threading
 import pytest
 from mock import Mock
 import mqlight
-from mqlight.exceptions import MQLightError, InvalidArgumentError
+from mqlight.exceptions import MQLightError, InvalidArgumentError, RangeError
 
 
 class TestSubscribe(object):
-
     """
     Unit tests for client.subscribe()
     """
@@ -177,7 +176,7 @@ class TestSubscribe(object):
         """
         Test a variety of valid and invalid patterns.  Invalid patterns
         should result in the client.subscribe(...) method throwing a
-        ValueError.
+        TypeError
         """
         test_is_done = threading.Event()
         func = Mock()
@@ -201,7 +200,7 @@ class TestSubscribe(object):
                     if test['valid']:
                         client.subscribe(test['pattern'])
                     else:
-                        with pytest.raises(InvalidArgumentError):
+                        with pytest.raises(TypeError):
                             client.subscribe(test['pattern'])
             except Exception as exc:
                 pytest.fail('Unexpected Exception ' + str(exc))
@@ -257,7 +256,7 @@ class TestSubscribe(object):
         test_is_done = threading.Event()
         func = Mock()
         data = [
-            {'valid': True, 'options': ''},
+            {'valid': False, 'options': ''},
             {'valid': True, 'options': None},
             {'valid': False, 'options': func},
             {'valid': False, 'options': '1'},
@@ -316,10 +315,10 @@ class TestSubscribe(object):
                     test = data[i]
                     opts = {'qos': test['qos']}
                     if test['valid']:
-                        client.subscribe('/foo' + str(i), opts)
+                        client.subscribe('/foo' + str(i), options=opts)
                     else:
-                        with pytest.raises(InvalidArgumentError):
-                            client.subscribe('/foo' + str(i), opts)
+                        with pytest.raises(RangeError):
+                            client.subscribe('/foo' + str(i), options=opts)
             except Exception as exc:
                 pytest.fail('Unexpected Exception ' + str(exc))
             finally:
@@ -363,10 +362,11 @@ class TestSubscribe(object):
                 for i in range(len(data)):
                     test = data[i]
                     if test['valid']:
-                        client.subscribe('/foo' + str(i), test['opts'])
+                        client.subscribe('/foo' + str(i), options=test['opts'])
                     else:
-                        with pytest.raises(InvalidArgumentError):
-                            client.subscribe('/foo' + str(i), test['opts'])
+                        with pytest.raises(TypeError):
+                            client.subscribe('/foo' + str(i),
+                                             options=test['opts'])
             except Exception as exc:
                 pytest.fail('Unexpected Exception ' + str(exc))
             finally:
@@ -407,10 +407,10 @@ class TestSubscribe(object):
                     test = data[i]
                     opts = {'ttl': test['ttl']}
                     if test['valid']:
-                        client.subscribe('/foo' + str(i), opts)
+                        client.subscribe('/foo' + str(i), options=opts)
                     else:
-                        with pytest.raises(TypeError):
-                            client.subscribe('/foo' + str(i), opts)
+                        with pytest.raises(RangeError):
+                            client.subscribe('/foo' + str(i), options=opts)
             except Exception as exc:
                 pytest.fail('Unexpected Exception ' + str(exc))
             finally:
