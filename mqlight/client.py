@@ -2513,7 +2513,10 @@ class Client(object):
                 wait_for_subscribe_thread.start()
             except Exception as exc:
                 LOG.error('Client.subscribe', self._id, exc)
-                err = MQLightError(exc)
+                if isinstance(exc, (MQLightError, TypeError)):
+                    err = exc
+                else:
+                    err = MQLightError(exc)
                 finished_subscribing(err, on_subscribed)
         else:
             finished_subscribing(err, on_subscribed)

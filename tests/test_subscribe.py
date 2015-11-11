@@ -127,7 +127,7 @@ class TestSubscribe(object):
             """started listener"""
             def subscribed(err, topic_pattern, share):
                 """subscribe callback"""
-                assert isinstance(err, MQLightError)
+                assert isinstance(err, TypeError)
                 assert topic_pattern == '/bad'
                 assert share == 'share'
                 client.stop()
