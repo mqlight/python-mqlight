@@ -1953,6 +1953,8 @@ class Client(object):
             return False
         self._action_queue.put((self._send,
                                 topic, data, options, on_sent, qos, ttl))
+        # FIXME: the drain behaviour seems badly implemented to me
+        self._next_message = len(self._outstanding_sends) <= 1
         LOG.exit('Client.send', self._id, self._next_message)
         return self._next_message
 
@@ -2195,7 +2197,7 @@ class Client(object):
                 self._id,
                 'outstandingSends:',
                 len(self._outstanding_sends))
-            if len(self._outstanding_sends) < 1:
+            if len(self._outstanding_sends) <= 1:
                 self._next_message = True
             else:
                 self._on_drain_required = True
