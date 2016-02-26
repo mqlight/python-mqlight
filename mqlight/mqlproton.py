@@ -388,8 +388,8 @@ class _MQLightMessenger(object):
             raise MQLightError('Failed to set messenger route')
         # Indicate that the route should be validated
         if cproton.pn_messenger_set_flags(
-                self.messenger,
-                cproton.PN_FLAGS_CHECK_ROUTES):
+                self.messenger, cproton.PN_FLAGS_CHECK_ROUTES
+                | cproton.PN_FLAGS_ALLOW_INSECURE_MECHS):
             self.messenger = None
             raise TypeError('Invalid set flags call')
 
