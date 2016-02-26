@@ -99,7 +99,7 @@ class PyTest(TestCommand):
 
 setup(
     name='mqlight',
-    version='9.9.9999999999',
+    version='1.0.2016120100',
     description='IBM MQ Light Client Python Module',
     long_description=LONG_DESCRIPTION,
     url='https://developer.ibm.com/messaging/mq-light/',
