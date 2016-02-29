@@ -1109,20 +1109,14 @@ class _MQLightSocket(object):
                 socket.SOCK_STREAM)
             if tls:
                 LOG.data(NO_CLIENT_ID, 'wrapping the socket in an SSL context')
-                self.sock = ssl.wrap_socket(
-                    self.sock,
-                    cert_reqs=ssl.CERT_REQUIRED,
-                    ca_certs=security_options.ssl_trust_certificate)
+                ctx = ssl.create_default_context(
+                    ssl.Purpose.SERVER_AUTH,
+                    security_options.ssl_trust_certificate)
+                ctx.check_hostname = security_options.ssl_verify_name
+                self.sock = ctx.wrap_socket(self.sock, server_hostname=address[0])
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.sock.connect(address)
 
-            # Check the hostname
-            if tls and security_options.ssl_verify_name:
-                try:
-                    match_hostname(self.sock.getpeercert(), address[0])
-                except CertificateError:
-                    raise ssl.SSLError(
-                        'SSL Failure: certificate verify failed')
             self.running = True
             self.io_loop = threading.Thread(target=self.loop)
             self.io_loop.start()
