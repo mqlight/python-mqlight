@@ -19,7 +19,6 @@ import ssl
 import select
 import threading
 import Queue
-from backports.ssl_match_hostname import match_hostname, CertificateError
 from . import cproton
 from .exceptions import MQLightError, SecurityError, ReplacedError, \
     NetworkError, InvalidArgumentError, NotPermittedError
@@ -696,7 +695,6 @@ class _MQLightMessenger(object):
             raise NetworkError('Not connected')
 
         tracker = message.tracker
-        delivery = cproton.pn_messenger_delivery(self.messenger, tracker)
         status = cproton.pn_messenger_settle(
             self.messenger,
             tracker,
@@ -1053,7 +1051,7 @@ class _MQLightMessenger(object):
                     if self.connection and n > 0:
                         # write n bytes to stream
                         buf = cproton.pn_transport_head(transport, n)
-                        sent = sock.send(buf)
+                        sock.send(buf)
 
                         closed = cproton.pn_connection_pop(self.connection, n)
                         if closed:

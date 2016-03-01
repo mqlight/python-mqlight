@@ -1922,7 +1922,7 @@ class Client(object):
                     if ttl > 4294967295:
                         # Cap at max AMQP value for TTL (2^32-1)
                         ttl = 4294967295
-                except Exception as err:
+                except Exception: 
                     raise RangeError(
                         'options[\'ttl\'] value {0} is invalid must be an '
                         'unsigned integer number'.format(options['ttl']))

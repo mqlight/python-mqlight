@@ -15,7 +15,7 @@
 # </copyright>
 from __future__ import absolute_import
 from .logging import get_logger, NO_CLIENT_ID
-from .exceptions import MQLightError, SecurityError, NetworkError
+from .exceptions import MQLightError, NetworkError
 
 LOG = get_logger(__name__)
 
