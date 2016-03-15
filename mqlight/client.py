@@ -39,11 +39,11 @@ import ssl
 try:
     import httplib
     from urlparse import urlparse
-    from urllib import quote
+    from urllib import quote, quote_plus
 except ImportError:
     import http.client as httplib
     from urllib.parse import urlparse
-    from urllib.parse import quote
+    from urllib.parse import quote, quote_plus
 from .exceptions import MQLightError, InvalidArgumentError, RangeError, \
     NetworkError, NotPermittedError, ReplacedError, LocalReplacedError, \
     StoppedError, SubscribedError, UnsubscribedError, SecurityError
@@ -1578,10 +1578,10 @@ class Client(object):
                 password = None
                 if self._security_options.url_user is not None:
                     user = quote(str(self._security_options.url_user))
-                    password = quote(str(self._security_options.url_password))
+                    password = quote_plus(str(self._security_options.url_password))
                 elif self._security_options.property_user is not None:
                     user = quote(str(self._security_options.property_user))
-                    password = quote(
+                    password = quote_plus(
                         str(self._security_options.property_password))
                 if user and password:
                     auth = '{0}:{1}@'.format(user, password)
