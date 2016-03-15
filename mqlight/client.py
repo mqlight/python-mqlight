@@ -505,9 +505,10 @@ class Client(object):
             of the second instance. If this property is not specified then
             the Client will generate a probabilistically unique ID.
         :param security_options: (optional) A dictionary that can have the
-            the following keys: "user", "password" (for SASL authentication);
+            the following keys: 
+            "property_user", "property_password" (for SASL);
             "sslTrustCertificate" specifying the path to the certificate file,
-            and sslVerifyName which is a boolean.
+            "sslVerifyName" which is a boolean.
         :param on_started: (optional) A function to be called when the Client
             reaches the started state. This function prototype must be
             ``func(client)`` ``client`` is an instance of the client.
