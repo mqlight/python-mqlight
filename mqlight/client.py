@@ -150,12 +150,12 @@ class SecurityOptions(object):
     """
 
     def __init__(self, options):
-        if 'property_user' in options:
-            self.property_user = options['property_user']
+        if 'user' in options:
+            self.property_user = options['user']
         else:
             self.property_user = None
-        if 'property_password' in options:
-            self.property_password = options['property_password']
+        if 'password' in options:
+            self.property_password = options['password']
         else:
             self.property_password = None
         self.url_user = None

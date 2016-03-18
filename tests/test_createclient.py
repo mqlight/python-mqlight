@@ -145,8 +145,8 @@ class TestCreateClient(object):
         for i in range(len(data)):
             opts = data[i]
             security_options = {
-                'property_user': opts['user'],
-                'property_password': opts['password']
+                'user': opts['user'],
+                'password': opts['password']
             }
             client = None
             try:
@@ -167,8 +167,8 @@ class TestCreateClient(object):
         """
         client = mqlight.Client('amqp://localhost:5672',
                                 'test_password_hidden',
-                                {'property_user': 'username',
-                                 'property_password': 's3cret'})
+                                {'user': 'username',
+                                 'password': 's3cret'})
         members = inspect.getmembers(client,
                                      lambda a: not inspect.isroutine(a))
         assert re.search(r's3cret', str(members)) is None
