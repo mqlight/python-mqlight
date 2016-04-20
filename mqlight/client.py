@@ -1571,6 +1571,8 @@ class Client(object):
         # Try each service in turn until we can successfully connect, or
         # exhaust the list
         for i, service in enumerate(self._service_list):
+            if connected:
+                break
             try:
                 # check if we will be providing authentication information
                 auth = None
@@ -1705,7 +1707,6 @@ class Client(object):
                             perform_heartbeat,
                             [interval])
                         self._heartbeat_timeout.start()
-
             except Exception as exc:
                 # Should never get here, as it means that messenger.connect has
                 # been called in an invalid way, so FFDC
