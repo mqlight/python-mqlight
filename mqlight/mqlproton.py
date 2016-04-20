@@ -387,8 +387,8 @@ class _MQLightMessenger(object):
             raise MQLightError('Failed to set messenger route')
         # Indicate that the route should be validated
         if cproton.pn_messenger_set_flags(
-                self.messenger, cproton.PN_FLAGS_CHECK_ROUTES
-                | cproton.PN_FLAGS_ALLOW_INSECURE_MECHS):
+                self.messenger, cproton.PN_FLAGS_CHECK_ROUTES |
+                cproton.PN_FLAGS_ALLOW_INSECURE_MECHS):
             self.messenger = None
             raise TypeError('Invalid set flags call')
 
@@ -1111,7 +1111,8 @@ class _MQLightSocket(object):
                     ssl.Purpose.SERVER_AUTH,
                     security_options.ssl_trust_certificate)
                 ctx.check_hostname = security_options.ssl_verify_name
-                self.sock = ctx.wrap_socket(self.sock, server_hostname=address[0])
+                self.sock = ctx.wrap_socket(
+                    self.sock, server_hostname=address[0])
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.sock.connect(address)
 

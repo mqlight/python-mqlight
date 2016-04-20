@@ -679,7 +679,7 @@ class Client(object):
 
         # Thread to process actions without blocking main thread
         self._action_handler_thread = threading.Thread(
-                                                target=self._action_handler)
+            target=self._action_handler)
         self._action_handler_thread.setDaemon(True)
         self._action_handler_thread.start()
         # Heartbeat
@@ -813,7 +813,7 @@ class Client(object):
             # a check.
             if self._subscriptions:
                 if self.state == STARTED:
-                        self._check_for_messages()
+                    self._check_for_messages()
         LOG.exit('Client._push_chunks', self._id, None)
 
     def _action_handler(self):
@@ -1580,7 +1580,8 @@ class Client(object):
                 password = None
                 if self._security_options.url_user is not None:
                     user = quote(str(self._security_options.url_user))
-                    password = quote_plus(str(self._security_options.url_password))
+                    password = quote_plus(
+                        str(self._security_options.url_password))
                 elif self._security_options.property_user is not None:
                     user = quote(str(self._security_options.property_user))
                     password = quote_plus(
@@ -1923,7 +1924,7 @@ class Client(object):
                     if ttl > 4294967295:
                         # Cap at max AMQP value for TTL (2^32-1)
                         ttl = 4294967295
-                except Exception: 
+                except Exception:
                     raise RangeError(
                         'options[\'ttl\'] value {0} is invalid must be an '
                         'unsigned integer number'.format(options['ttl']))
@@ -2029,8 +2030,8 @@ class Client(object):
                                 # hasn't been set on the message yet,
                                 # so skip and try again
                                 except TypeError:
-                                        time.sleep(0.1)
-                                        continue
+                                    time.sleep(0.1)
+                                    continue
                                 LOG.data(self._id, 'status:', status)
                                 complete = False
                                 err = None
@@ -2355,7 +2356,7 @@ class Client(object):
                             options['auto_confirm']))
             if 'ttl' in options:
                 try:
-                    ttl = int(options['ttl']//1000)
+                    ttl = int(options['ttl'] // 1000)
                     if ttl < 0:
                         raise TypeError()
                 except Exception as err:
