@@ -1,14 +1,14 @@
 """
 <copyright
 notice="lm-source-program"
-pids="5725-P60"
-years="2013,2015"
-crc="3568777996" >
+pids="5724-H72"
+years="2013,2016"
+crc="725605481" >
 Licensed Materials - Property of IBM
 
 5725-P60
 
-(C) Copyright IBM Corp. 2013, 2015
+(C) Copyright IBM Corp. 2013, 2016
 
 US Government Users Restricted Rights - Use, duplication or
 disclosure restricted by GSA ADP Schedule Contract with
@@ -17,19 +17,26 @@ IBM Corp.
 """
 # pylint: disable=bare-except,broad-except,invalid-name,no-self-use
 # pylint: disable=too-many-public-methods,unused-argument
+import unittest
 import threading
 import pytest
-from mock import Mock
+import traceback
 import mqlight
 from mqlight.exceptions import StoppedError, InvalidArgumentError
 
 
-class TestSend(object):
+class TestSend(unittest.TestCase):
 
     """
     Unit tests for client.send()
     """
     TEST_TIMEOUT = 10.0
+
+    def func001(self, a):
+        pass
+
+    def func005(self, a, b, c, d, e):
+        pass
 
     def test_send_too_few_arguments(self):
         """
@@ -61,7 +68,7 @@ class TestSend(object):
 
         def started(client):
             """started listener"""
-            callback = Mock()
+            callback = self.func005
             with pytest.raises(TypeError):
                 client.send('topic', 'message', {}, callback, 'extra')
             client.stop()
@@ -76,27 +83,27 @@ class TestSend(object):
         should result in the client.send(...) method throwing a TypeError.
         """
         test_is_done = threading.Event()
-        func = Mock()
+        func = self.func001
         data = [
-            {'valid': False, 'topic': ''},
-            {'valid': False, 'topic': None},
-            {'valid': True, 'topic': 1234},
-            {'valid': True, 'topic': func},
-            {'valid': True, 'topic': 'kittens'},
-            {'valid': True, 'topic': '/kittens'}
+            {'name': 'TopicEmptyStr','error': InvalidArgumentError, 'topic': ''},
+            {'name': 'TopicNone',    'error': InvalidArgumentError, 'topic': None},
+            {'name': 'Topic1234',    'error': InvalidArgumentError, 'topic': 1234},
+            {'name': 'TopicFunc',    'error': InvalidArgumentError, 'topic': func},
+            {'name': 'TopicKittens', 'error': None,  'topic': 'kittens'},
+            {'name': 'Topic/Kittens','error': None,  'topic': '/kittens'}
         ]
 
         def started(client):
             """started listener"""
             try:
                 for test in data:
-                    if test['valid']:
+                    if test['error'] is None:
                         client.send(test['topic'], 'message')
                     else:
-                        with pytest.raises(TypeError):
+                        with pytest.raises(test['error']):
                             client.send(test['topic'], 'message')
             except Exception as exc:
-                pytest.fail('Unexpected Exception ' + str(exc))
+                pytest.fail('Test {0} : Unexpected Exception {1}{2}'.format(test['name'], str(type(exc)),str(exc)))
             finally:
                 client.stop()
                 test_is_done.set()
@@ -112,20 +119,20 @@ class TestSend(object):
         """
         test_is_done = threading.Event()
         data = [
-            {'topic': 'topic1', 'data': 'data1', 'options': {}},
-            {'topic': 'topic2', 'data': 'data2', 'options': None}
+            {'topic': 'topic1', 'data': 'last', 'options': {'qos':0, 'ttl': 1}},
+            {'topic': 'topic2', 'data': 'data2', 'options': {'qos':1, 'ttl': 10000}}
         ]
 
         def started(client):
             """started listener"""
-            def send_callback(err, topic, d, options):
+            def send_callback(client, err, topic, d, options):
                 """send callback"""
                 opts = data.pop()
                 assert err is None
                 assert topic == opts['topic']
                 assert d == opts['data']
                 assert options == opts['options']
-                if len(data) == 0:
+                if d == 'last':
                     client.stop()
                     test_is_done.set()
 
@@ -136,6 +143,7 @@ class TestSend(object):
                                 test['options'],
                                 send_callback)
             except Exception as exc:
+                traceback.print_exc()
                 pytest.fail('Unexpected Exception ' + str(exc))
         client = mqlight.Client('amqp://host',
                                 client_id='test_send_callback',
@@ -152,7 +160,7 @@ class TestSend(object):
 
         def started(client):
             """started listener"""
-            def stopped(client):
+            def stopped(client, err):
                 """stopped listener"""
                 with pytest.raises(StoppedError):
                     client.send('topic', 'message')
@@ -171,7 +179,7 @@ class TestSend(object):
         individual options will be in separate tests
         """
         test_is_done = threading.Event()
-        func = Mock()
+        func = self.func005
         data = [
             {'valid': False, 'options': ''},
             {'valid': True, 'options': None},
@@ -207,7 +215,7 @@ class TestSend(object):
         should result in the client.send(...) method throwing a ValueError.
         """
         test_is_done = threading.Event()
-        func = Mock()
+        func = self.func005
         data = [
             {'valid': False, 'qos': ''},
             {'valid': False, 'qos': None},
@@ -232,7 +240,7 @@ class TestSend(object):
                         with pytest.raises(Exception):
                             client.send('test', 'message', opts, func)
             except Exception as exc:
-                pytest.fail('Unexpected Exception ' + str(exc) + ' for qos ' +
+                pytest.fail('Unexpected Exception \'' + str(exc) + '\' for qos ' +
                             str(test['qos']))
             client.stop()
             test_is_done.set()
@@ -245,12 +253,12 @@ class TestSend(object):
         Test that a function is required when QoS is 1.
         """
         test_is_done = threading.Event()
-        func = Mock()
+        func = self.func005
         data = [
-            {'valid': False, 'qos': 1, 'callback': None},
-            {'valid': True, 'qos': 1, 'callback': func},
-            {'valid': True, 'qos': 0, 'callback': None},
-            {'valid': True, 'qos': 0, 'callback': func}
+            {'name': 'Qos1CallbackNone', 'valid': False, 'qos': 1, 'callback': None},
+            {'name': 'Qos1CallbackFunc', 'valid': True,  'qos': 1, 'callback': func},
+            {'name': 'Qos0CallbackNone', 'valid': True,  'qos': 0, 'callback': None},
+            {'name': 'Qos0CallbackFunc', 'valid': True,  'qos': 0, 'callback': func}
         ]
 
         def started(client):
@@ -265,7 +273,7 @@ class TestSend(object):
                             client.send('test', 'message', opts,
                                         test['callback'])
             except Exception as exc:
-                pytest.fail('Unexpected Exception ' + str(exc))
+                pytest.fail('Test {0} : Unexpected Exception {1}'.format(test['name'], str(exc)))
             client.stop()
             test_is_done.set()
         client = mqlight.Client('amqp://host', on_started=started)

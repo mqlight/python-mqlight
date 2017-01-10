@@ -1,14 +1,14 @@
 """
 <copyright
 notice="lm-source-program"
-pids="5725-P60"
-years="2013,2015"
-crc="3568777996" >
+pids="5724-H72"
+years="2013,2016"
+crc="1615301132" >
 Licensed Materials - Property of IBM
 
 5725-P60
 
-(C) Copyright IBM Corp. 2013, 2015
+(C) Copyright IBM Corp. 2013, 2016
 
 US Government Users Restricted Rights - Use, duplication or
 disclosure restricted by GSA ADP Schedule Contract with
@@ -17,18 +17,25 @@ IBM Corp.
 """
 # pylint: disable=bare-except,broad-except,invalid-name,no-self-use
 # pylint: disable=too-many-public-methods,unused-argument
+import unittest
 import threading
 import pytest
-from mock import Mock
+import traceback
 import mqlight
 from mqlight.exceptions import MQLightError, InvalidArgumentError, RangeError
 
 
-class TestSubscribe(object):
+class TestSubscribe(unittest.TestCase):
     """
     Unit tests for client.subscribe()
     """
     TEST_TIMEOUT = 10.0
+
+    def func003(self, client, a ,b):
+        pass
+
+    def func004(self, client, a ,b, c):
+        pass
 
     def test_subscribe_too_few_arguments(self):
         """
@@ -59,7 +66,7 @@ class TestSubscribe(object):
 
         def started(client):
             """started listener"""
-            callback = Mock()
+            callback = self.func003
             with pytest.raises(TypeError):
                 # pylint: disable=too-many-function-args
                 client.subscribe('/foo', 'share1', {}, callback, 'extra')
@@ -82,7 +89,7 @@ class TestSubscribe(object):
             """started listener"""
             with pytest.raises(TypeError):
                 client.subscribe('/foo1', 'share', {}, 7)
-            callback = Mock()
+            callback = self.func004
             client.subscribe('/foo2', 'share', {}, callback)
             client.stop()
             test_is_done.set()
@@ -102,7 +109,7 @@ class TestSubscribe(object):
         def started(client):
             """started listener"""
 
-            def subscribed(err, topic_pattern, share):
+            def subscribed(client, err, topic_pattern, share):
                 """subscribe callback"""
                 assert topic_pattern == '/foo'
                 assert share is None
@@ -125,9 +132,9 @@ class TestSubscribe(object):
 
         def started(client):
             """started listener"""
-            def subscribed(err, topic_pattern, share):
+            def subscribed(client, err, topic_pattern, share):
                 """subscribe callback"""
-                assert isinstance(err, TypeError)
+                assert isinstance(err, MQLightError)
                 assert topic_pattern == '/bad'
                 assert share == 'share'
                 client.stop()
@@ -144,15 +151,19 @@ class TestSubscribe(object):
         Test that trying to establish a subscription, while the client is in
         stopped state, throws an Error
         """
-        client = mqlight.Client('amqp://host',
-                                'test_subscribe_when_stopped')
-
-        def stopped(client):
+        test_is_done = threading.Event()
+        def stopped(client, error):
             """stopped listener"""
             with pytest.raises(MQLightError):
                 client.subscribe('/foo')
-                client.stop()
-        client.stop(stopped)
+            test_is_done.set()
+        def started(client):
+            client.stop(on_stopped=stopped)
+        client = mqlight.Client('amqp://host',
+                                'test_subscribe_when_stopped', on_started=started)
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
+
 
     def test_subscribe_returns_client(self):
         """
@@ -179,12 +190,12 @@ class TestSubscribe(object):
         TypeError
         """
         test_is_done = threading.Event()
-        func = Mock()
+        func = self.func003
         data = [
             {'valid': False, 'pattern': ''},
             {'valid': False, 'pattern': None},
-            {'valid': True, 'pattern': 1234},
-            {'valid': True, 'pattern': func},
+            {'valid': False, 'pattern': 1234},
+            {'valid': False, 'pattern': func},
             {'valid': True, 'pattern': 'kittens'},
             {'valid': True, 'pattern': '/kittens'},
             {'valid': True, 'pattern': '+'},
@@ -200,7 +211,7 @@ class TestSubscribe(object):
                     if test['valid']:
                         client.subscribe(test['pattern'])
                     else:
-                        with pytest.raises(TypeError):
+                        with pytest.raises(InvalidArgumentError):
                             client.subscribe(test['pattern'])
             except Exception as exc:
                 pytest.fail('Unexpected Exception ' + str(exc))
@@ -221,7 +232,7 @@ class TestSubscribe(object):
         test_is_done = threading.Event()
         data = [
             {'valid': True, 'share': 'abc'},
-            {'valid': True, 'share': 7},
+            {'valid': False, 'share': 7},
             {'valid': False, 'share': ':'},
             {'valid': False, 'share': 'a:'},
             {'valid': False, 'share': ':a'}
@@ -254,7 +265,7 @@ class TestSubscribe(object):
         ValueError.
         """
         test_is_done = threading.Event()
-        func = Mock()
+        func = self.func003
         data = [
             {'valid': False, 'options': ''},
             {'valid': True, 'options': None},
@@ -295,7 +306,7 @@ class TestSubscribe(object):
         should result in the client.subscribe(...) method throwing a ValueError
         """
         test_is_done = threading.Event()
-        func = Mock()
+        func = self.func003
         data = [
             {'valid': False, 'qos': ''},
             {'valid': False, 'qos': None},
@@ -337,7 +348,7 @@ class TestSubscribe(object):
         throwing a ValueError
         """
         test_is_done = threading.Event()
-        func = Mock()
+        func = self.func003
         tmp = True
         data = [
             {'valid': False, 'opts': {'auto_confirm': ''}},
@@ -368,6 +379,7 @@ class TestSubscribe(object):
                             client.subscribe('/foo' + str(i),
                                              options=test['opts'])
             except Exception as exc:
+                traceback.print_exc()
                 pytest.fail('Unexpected Exception ' + str(exc))
             finally:
                 client.stop()
@@ -384,35 +396,37 @@ class TestSubscribe(object):
         should result in the client.subscribe(...) method throwing a ValueError
         """
         test_is_done = threading.Event()
-        func = Mock()
+        func = self.func003
         data = [
-            {'valid': False, 'ttl': None},
-            {'valid': False, 'ttl': func},
-            {'valid': False, 'ttl': -9007199254740992},
-            {'valid': False, 'ttl': float('nan')},
-            {'valid': False, 'ttl': float('-nan')},
-            {'valid': False, 'ttl': float('inf')},
-            {'valid': False, 'ttl': float('-inf')},
-            {'valid': False, 'ttl': ''},
-            {'valid': True, 'ttl': 0},
-            {'valid': True, 'ttl': 1},
-            {'valid': True, 'ttl': 9 - 8},
-            {'valid': True, 'ttl': 9007199254740992}
+            {'name': 'TTLBoolean',  'result': TypeError, 'ttl': None},
+            {'name': 'TTLFunction', 'result': TypeError, 'ttl': func},
+            {'name': 'TTLNegNum',   'result': RangeError, 'ttl': -9007199254740992},
+            {'name': 'TTLPosNan',   'result': TypeError, 'ttl': float('nan')},
+            {'name': 'TTLNegNan',   'result': TypeError, 'ttl': float('-nan')},
+            {'name': 'TTLPosInf',   'result': TypeError, 'ttl': float('inf')},
+            {'name': 'TTLNegInf',   'result': TypeError, 'ttl': float('-inf')},
+            {'name': 'TTLEmptyStr', 'result': TypeError, 'ttl': ''},
+            {'name': 'TTLZero',     'result': None,  'ttl': 0},
+            {'name': 'TTLOne',      'result': None,  'ttl': 1},
+            {'name': 'TTLSum',      'result': None,  'ttl': 9 - 8},
+            {'name': 'TTLLargeNum', 'result': None,  'ttl': 9007199254740992}
         ]
 
         def started(client):
             """started listener"""
+            name = ''
             try:
                 for i in range(len(data)):
                     test = data[i]
+                    name = test['name']
                     opts = {'ttl': test['ttl']}
-                    if test['valid']:
+                    if test['result'] is None:
                         client.subscribe('/foo' + str(i), options=opts)
                     else:
-                        with pytest.raises(RangeError):
+                        with pytest.raises(test['result']):
                             client.subscribe('/foo' + str(i), options=opts)
             except Exception as exc:
-                pytest.fail('Unexpected Exception ' + str(exc))
+                pytest.fail('Test {0} : {1} Unexpected Exception {2}'.format(name, str(type(exc)), str(exc)))
             finally:
                 client.stop()
                 test_is_done.set()
