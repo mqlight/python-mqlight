@@ -1,13 +1,13 @@
 # <copyright
 # notice="lm-source-program"
 # pids="5725-P60"
-# years="2013,2015"
+# years="2013,2016"
 # crc="3568777996" >
 # Licensed Materials - Property of IBM
 #
 # 5725-P60
 #
-# (C) Copyright IBM Corp. 2013, 2015
+# (C) Copyright IBM Corp. 2013, 2016
 #
 # US Government Users Restricted Rights - Use, duplication or
 # disclosure restricted by GSA ADP Schedule Contract with
@@ -15,7 +15,8 @@
 # </copyright>
 from __future__ import absolute_import
 from .logging import get_logger, NO_CLIENT_ID
-from .exceptions import MQLightError, NetworkError
+from .exceptions import MQLightError, SecurityError, NetworkError
+from ssl import SSLError
 
 LOG = get_logger(__name__)
 
@@ -23,6 +24,7 @@ SEND_STATUS = 'SETTLED'
 CONNECT_STATUS = 0
 QOS_AT_MOST_ONCE = 0
 QOS_AT_LEAST_ONCE = 1
+CURRENT_SOCKET = None
 
 
 class _MQLightMessage(object):
@@ -36,11 +38,13 @@ class _MQLightMessage(object):
         MQLight Message constructor
         """
         LOG.data(NO_CLIENT_ID, '_MQLightMessage.constructor called')
+        self._body_data = message
 
-    def _set_body(self, value):
+    def _set_body(self, body_data):
         """
         Handles body data type and encoding
         """
+        self._body_data = body_data
         LOG.data(NO_CLIENT_ID, '_MQLightMessage._set_body called')
 
     def _get_body(self):
@@ -48,13 +52,28 @@ class _MQLightMessage(object):
         Handles body data type and encoding
         """
         LOG.data(NO_CLIENT_ID, '_MQLightMessage._get_body called')
-        return None
+        return self._body_data
 
     body = property(_get_body, _set_body)
-    annotations = property((lambda s: None), (lambda s, v: None))
     content_type = property((lambda s: None), (lambda s, v: None))
     ttl = property((lambda s: None), (lambda s, v: None))
-    address = property((lambda s: None), (lambda s, v: None))
+
+    def _get_delivery_annotations(self):
+        return []
+    annotations = property(_get_delivery_annotations)
+
+    def _set_address(self, address):
+        """
+        Sets the address
+        """
+
+    def _get_address(self):
+        """
+        Gets the address
+        """
+        return 'amqp://some.host:5672/private:topic'
+
+    address = property(_get_address, _set_address)
 
     def _set_tracker(self, tracker):
         """
@@ -82,7 +101,7 @@ class _MQLightMessage(object):
         Returns the link address
         """
         LOG.data(NO_CLIENT_ID, '_MQLightMessage._get_link_address called')
-        return None
+        return 'private:topic'
 
     link_address = property(_get_link_address, _set_link_address)
 
@@ -123,7 +142,7 @@ class _MQLightMessenger(object):
         """
         LOG.data(NO_CLIENT_ID, '_MQLightMessenger.constructor called')
         self._stopped = True
-        self.stop_count = 2
+        self.stop_count = 0
         self.remote_idle_timeout = -1
         self.work_callback = None
         self.last_address = None
@@ -135,9 +154,9 @@ class _MQLightMessenger(object):
         LOG.data(NO_CLIENT_ID, '_MQLightMessenger.connect called')
         if not self._stopped:
             raise MQLightError('already connected')
-        if 'bad' in service.netloc:
+        if 'bad' in service.address:
             raise TypeError(
-                'bad service ' + service.scheme + '://' + service.netloc)
+                'bad service ' + service.address)
         else:
             if CONNECT_STATUS != 0:
                 raise NetworkError(
@@ -146,22 +165,22 @@ class _MQLightMessenger(object):
                 self._stopped = False
                 LOG.data(NO_CLIENT_ID, 'successfully connected')
 
-    def stop(self, sock):
+    def stop(self, sock, attempts):
         """
         Calls stop() on the proton Messenger
         """
         LOG.data(NO_CLIENT_ID, '_MQLightMessenger.stop called')
-        if not self._stopped:
-            self.stop_count -= 1
-            if self.stop_count == 0:
-                self._stopped = True
-                self.stop_count = 2
+        self.stopped = True
         return self._stopped
 
     def _is_stopped(self):
         """
         Returns True
         """
+        if self.stop_count > 0:
+            self.stop_count -= 1
+            if self.stop_count == 0:
+                self._stopped = True
         return self._stopped
 
     def _set_stopped(self, state):
@@ -273,7 +292,7 @@ class _MQLightMessenger(object):
         """
         Retrieves messages from the incoming queue
         """
-        return []
+        return [_MQLightMessage('message')]
 
     def settle(self, message, sock):
         """
@@ -306,7 +325,8 @@ class _MQLightMessenger(object):
         Subscribes to a topic
         """
         if 'bad' in address:
-            raise TypeError('topic space on fire')
+            raise MQLightError('Mock subscribe: topic space on fire {0}'.
+                               format(address))
         self.last_address = address
         return True
 
@@ -333,7 +353,8 @@ class _MQLightMessenger(object):
 
     def push(self, chunk):
         LOG.entry('_MQLightMessenger.push', NO_CLIENT_ID)
-        LOG.exit('_MQLightMessenger.push', NO_CLIENT_ID, None)
+        LOG.exit('_MQLightMessenger.push', NO_CLIENT_ID, len(chunk))
+        return len(chunk)
 
     def _write(self, sock, force):
         LOG.entry('_MQLightMessenger._write', NO_CLIENT_ID)
@@ -346,24 +367,27 @@ class _MQLightMessenger(object):
 
 class _MQLightSocket(object):
 
-    def __init__(self, address, tls, security_options, on_read, on_close):
+    def __init__(self, address, security_options, on_read, on_close):
         LOG.entry('_MQLightSocket.__init__', NO_CLIENT_ID)
+        self.on_read = on_read
         err = None
         verify = security_options.ssl_verify_name
-        if 'bad' in address[0]:
+        if 'bad' in address.host_port[0]:
             err = TypeError('ECONNREFUSED bad service ' + address[0])
         if security_options.ssl_trust_certificate == 'BadCertificate':
-            err = MQLightError('Bad Certificate')
+            err = SecurityError('Bad Certificate')
         elif security_options.ssl_trust_certificate == 'BadVerify2' and verify:
-            err = MQLightError('Bad verify name')
+            err = SecurityError('Bad verify name')
         elif CONNECT_STATUS != 0:
             err = NetworkError('connect error: ' + str(CONNECT_STATUS))
-
         if err:
-            LOG.data(NO_CLIENT_ID, 'connection error', err)
+            LOG.data(NO_CLIENT_ID, 'connection error ', str(type(err)), err)
             raise err
         else:
             LOG.data(NO_CLIENT_ID, 'connection successful')
+            global CURRENT_SOCKET
+            CURRENT_SOCKET = self
+
         LOG.exit('_MQLightSocket.__init__', NO_CLIENT_ID, None)
 
     def loop(self):
@@ -377,3 +401,9 @@ class _MQLightSocket(object):
     def close(self):
         LOG.entry('_MQLightSocket.close', NO_CLIENT_ID)
         LOG.exit('_MQLightSocket.close', NO_CLIENT_ID, None)
+
+    @staticmethod
+    def trigger_on_read():
+        global CURRENT_SOCKET
+        if CURRENT_SOCKET is not None:
+            CURRENT_SOCKET.on_read('message')

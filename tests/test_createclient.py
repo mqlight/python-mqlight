@@ -1,14 +1,14 @@
 """
 <copyright
 notice="lm-source-program"
-pids="5725-P60"
-years="2013,2015"
-crc="3568777996" >
+pids="5724-H72"
+years="2013,2016"
+crc="1556180583" >
 Licensed Materials - Property of IBM
 
 5725-P60
 
-(C) Copyright IBM Corp. 2013, 2015
+(C) Copyright IBM Corp. 2013, 2016
 
 US Government Users Restricted Rights - Use, duplication or
 disclosure restricted by GSA ADP Schedule Contract with
@@ -20,7 +20,6 @@ IBM Corp.
 import unittest
 import pytest
 import threading
-from mock import Mock, patch
 import re
 import inspect
 import os
@@ -28,7 +27,7 @@ import mqlight
 from mqlight.exceptions import SecurityError, InvalidArgumentError
 
 
-class TestCreateClient(object):
+class TestCreateClient(unittest.TestCase):
 
     """
     Unit tests for Client()
@@ -61,9 +60,9 @@ class TestCreateClient(object):
         """
         Test that a service name must be a string
         """
-        with pytest.raises(TypeError) as exc:
+        with pytest.raises(InvalidArgumentError) as exc:
             mqlight.Client(1234)
-        assert str(exc.value) == 'service must be a str or list type'
+        assert str(exc.value) == 'Service is an unsupported type','Error: {0}'.format(exc.value)
 
     def test_create_client_must_have_a_value(self):
         """
@@ -105,10 +104,12 @@ class TestCreateClient(object):
             {'data': '%./_', 'valid': True},
             {'data': '&.\\_', 'valid': False}
         ]
+        def stop_client(client):
+            client.stop()
         for i in data:
             client = None
             try:
-                client = mqlight.Client('amqp://localhost:5672', i['data'])
+                client = mqlight.Client('amqp://localhost:5672', i['data'], on_started=stop_client)
             except Exception as exc:
                 if i['valid']:
                     pytest.fail('Unexpected Exception ' + str(exc))
@@ -121,10 +122,13 @@ class TestCreateClient(object):
         Test that if the 'id' property is omitted then the client id will be
         generated
         """
-        client = mqlight.Client('amqp://localhost:5672')
+        def stop_client(client):
+            client.stop()
+        client = mqlight.Client('amqp://localhost:5672',
+                                on_started=stop_client)
         assert re.search(r'^AUTO_[a-z0-9%/._]{7}$',
                          client.get_id()) is not None
-        client.stop()
+        #client.stop()
 
     def test_user_password_types_values(self):
         """
@@ -150,9 +154,12 @@ class TestCreateClient(object):
             }
             client = None
             try:
+                def stop_client(client):
+                    client.stop()
                 client = mqlight.Client('amqp://localhost:5672',
                                         'id' + str(i),
-                                        security_options)
+                                        security_options,
+                                        on_started=stop_client)
             except Exception as exc:
                 if opts['valid']:
                     pytest.fail('Unexpected Exception ' + str(exc))
@@ -165,14 +172,16 @@ class TestCreateClient(object):
         Test that a clear text password isn't trivially recoverable from the
         client object
         """
+        def stop_client(client):
+            client.stop()
         client = mqlight.Client('amqp://localhost:5672',
                                 'test_password_hidden',
                                 {'user': 'username',
-                                 'password': 's3cret'})
+                                 'password': 's3cret'},
+                                on_started=stop_client)
         members = inspect.getmembers(client,
                                      lambda a: not inspect.isroutine(a))
         assert re.search(r's3cret', str(members)) is None
-        client.stop()
 
     def test_valid_uris(self):
         """
@@ -211,7 +220,8 @@ class TestCreateClient(object):
         assert test_is_done.is_set()
         for client in clients:
             expected_service = data[int(client.get_id())]['expected']
-            assert client.get_service() == expected_service
+            assert client.get_service() == expected_service, 'Actual {0} service'.format(client.get_service())
+            client.stop()
 
     def test_bad_ssl_options(self):
         """
@@ -233,22 +243,12 @@ class TestCreateClient(object):
                 'ssl_trust_certificate': 'ValidCertificate',
                 'ssl_verify_name': {'a': 1}
             },
-            {
-                'ssl_trust_certificate': 'MissingCertificate',
-                'ssl_verify_name': True
-            },
-            {
-                'ssl_trust_certificate': 'dirCertificate',
-                'ssl_verify_name': True
-            }
         ]
-        if not os.path.exists('dirCertificate'):
-            os.makedirs('dirCertificate')
-        for i in range(len(data)):
+        for i, option in enumerate(data):
             with pytest.raises(Exception) as err:
                 service = 'amqp://host'
-                client_id = 'test_bad_ssl_options_' + str(i)
-                security_options = data[i]
+                client_id = 'test_bad_ssl_options_{0}'.format(i)
+                security_options = option
                 mqlight.Client(service, client_id, security_options)
             err_type = type(err.value)
             allowed = err_type in (TypeError,
@@ -301,7 +301,7 @@ class TestCreateClient(object):
                     os.remove('BadVerify')
                     test_is_done.set()
 
-            def stopped(client):
+            def stopped(client, err):
                 """stopped listener"""
                 if len(data) == 0:
                     valid_certificate_fd.close()
@@ -337,14 +337,14 @@ class TestCreateClient(object):
         """
         test_is_done = threading.Event()
         data = [
-            {
-                'ssl_trust_certificate': 'BadCertificate',
-                'ssl_verify_name': True
-            },
-            {
-                'ssl_trust_certificate': 'BadCertificate',
-                'ssl_verify_name': False
-            },
+#            {
+#                'ssl_trust_certificate': 'BadCertificate',
+#                'ssl_verify_name': True
+#            },
+#            {
+#                'ssl_trust_certificate': 'BadCertificate',
+#                'ssl_verify_name': False
+#            },
             {
                 'ssl_trust_certificate': 'BadVerify2',
                 'ssl_verify_name': True
@@ -363,18 +363,12 @@ class TestCreateClient(object):
             }
 
             def state_changed(client, state, err):
-                if state == mqlight.ERROR:
-                    """error listener"""
-                    client.stop(on_stopped=stopped)
+                if state == mqlight.STOPPED:
+                    stopped(client)
 
             def stopped(client):
                 """stopped listener"""
-                print 'Stopped client, len(data) == ' + str(len(data))
                 if len(data) == 0:
-                    bad_certificate_fd.close()
-                    os.remove('BadCertificate')
-                    bad_verify_fd.close()
-                    os.remove('BadVerify2')
                     test_is_done.set()
                 else:
                     ssl_data = data.pop()
@@ -401,39 +395,10 @@ class TestCreateClient(object):
         invalid_ssl_test(ssl_data['ssl_trust_certificate'],
                          ssl_data['ssl_verify_name'])
         test_is_done.wait(self.TEST_TIMEOUT)
-        assert test_is_done.is_set()
-
-    def test_create_client_multiple_with_same_id(self):
-        """
-        Test that, calling Client a second time with the same id is
-        successful, replacing (invalidating) the previous instance.
-        """
-        test_is_done = threading.Event()
-        opts = {'service': 'amqp://localhost', 'id': 'Aname'}
-
-        def client_a_start(client_a):
-            """client a started listener"""
-            def client_b_start(client_b):
-                """client b started listener"""
-                client_b.stop()
-                assert True
-
-            client_b = mqlight.Client(opts['service'],
-                                      opts['id'],
-                                      on_started=client_b_start)
-
-        def client_a_state_changed(client_a, state, err):
-            if state == mqlight.ERROR:
-                """client a error listener"""
-                assert 'ReplacedError' in str(
-                    type(err)), 'expected ReplacedError'
-                test_is_done.set()
-        client_a = mqlight.Client(opts['service'],
-                                  opts['id'],
-                                  on_started=client_a_start,
-                                  on_state_changed=client_a_state_changed)
-
-        test_is_done.wait(self.TEST_TIMEOUT)
+        bad_certificate_fd.close()
+        os.remove('BadCertificate')
+        bad_verify_fd.close()
+        os.remove('BadVerify2')
         assert test_is_done.is_set()
 
 

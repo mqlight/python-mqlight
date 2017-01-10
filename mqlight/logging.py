@@ -1,13 +1,13 @@
 # <copyright
 # notice="lm-source-program"
-# pids="5725-P60"
-# years="2013,2015"
-# crc="3568777996" >
+# pids="5724-H72"
+# years="2013,2016"
+# crc="99677977">
 # Licensed Materials - Property of IBM
 #
 # 5725-P60
 #
-# (C) Copyright IBM Corp. 2013, 2015
+# (C) Copyright IBM Corp. 2013, 2016
 #
 # US Government Users Restricted Rights - Use, duplication or
 # disclosure restricted by GSA ADP Schedule Contract with
@@ -23,6 +23,10 @@ import socket
 import platform
 import threading
 import traceback
+import inspect
+from time import localtime, gmtime, strftime
+from pkg_resources import get_distribution, DistributionNotFound
+
 
 ENTRY_IND = '>-----------------------------------------------------------'
 EXIT_IND = '<-----------------------------------------------------------'
@@ -32,13 +36,15 @@ HEADER_BANNER = '+---------------------------------------------------------'\
 ALL = 100
 EXIT_OFTEN = 200
 ENTRY_OFTEN = 300
-DEBUG = 500
+PARMS_OFTEN = 300
+DEBUG = 400
+FROM = 500
 STATE = 800
 DATA = 1000
 PARMS = 1200
+ENTRY_EXIT = 1500
 EXIT = 1501
 ENTRY = 1502
-ENTRY_EXIT = 1503
 ERROR = 1800
 FFDC = 2000
 
@@ -47,6 +53,7 @@ LEVELS = {
     EXIT_OFTEN: 'EXIT_OFTEN',
     ENTRY_OFTEN: 'ENTRY_OFTEN',
     DEBUG: 'DEBUG',
+    FROM: 'FROM',
     STATE: 'STATE',
     DATA: 'DATA',
     PARMS: 'PARMS',
@@ -59,6 +66,7 @@ LEVELS = {
     'EXIT_OFTEN': EXIT_OFTEN,
     'ENTRY_OFTEN': ENTRY_OFTEN,
     'DEBUG': DEBUG,
+    'FROM': FROM,
     'STATE': STATE,
     'DATA': DATA,
     'PARMS': PARMS,
@@ -69,6 +77,10 @@ LEVELS = {
     'FFDC': FFDC
 }
 
+try:
+    __version__ = get_distribution('mqlight').version
+except DistributionNotFound:
+    VERSION = 1.0
 
 # Set the level of logging. By default only 'ffdc' entries will be logged, but
 # this can be altered by setting the environment variable MQLIGHT_PYTHON_LOG to
@@ -85,7 +97,6 @@ DEFAULT_STREAM = 'stderr'
 # MQLIGHT_PYTHON_LOG_SIZE to a different number.
 DEFAULT_LOG_SIZE = 10 * 1000 * 1000
 
-DEFAULT_STACK = ['<stack unwind error>']
 NO_CLIENT_ID = '*'
 IS_WIN = os.name == 'nt'
 LOCK = threading.Lock()
@@ -93,6 +104,10 @@ LOCK = threading.Lock()
 
 def get_logger(name):
     return MQLightLog(name)
+
+
+def _get_depth():
+    return len(traceback.format_stack()) - 5
 
 
 class MQLightLog(object):
@@ -108,7 +123,6 @@ class MQLightLog(object):
         if self._level is None:
             self._level = FFDC
         self._ffdc_sequence = 0
-        self._stack = DEFAULT_STACK
 
         # File Handler
         self._fd = None
@@ -132,10 +146,27 @@ class MQLightLog(object):
         self._log_size = os.getenv('MQLIGHT_PYTHON_LOG_SIZE', DEFAULT_LOG_SIZE)
         self._stream = os.getenv('MQLIGHT_PYTHON_LOG_STREAM', DEFAULT_STREAM)
         formatter = logging.Formatter(
-            '%(asctime)s [%(process)s] - %(name)s - %(client_id)s - ' +
-            '%(lvl)s %(message)s')
+            '%(asctime)s [%(process)s:%(threadName)s] - %(name)s - '
+            '%(client_id)s - %(lvl)s %(message)s')
+        ffdc_formatter = logging.Formatter('%(message)s')
 
-        self._set_handler(self._stream, self._log_size, formatter)
+        self.multi_formatter = MultiFormatter(formatter, ffdc_formatter)
+
+        self._set_handler(self._stream, self._log_size, self.multi_formatter)
+
+    def show_trace_header(self):
+        """
+        Display the trace header information
+        """
+        keys = {'client_id': NO_CLIENT_ID}
+        self._write(ENTRY_EXIT, HEADER_BANNER, keys)
+        self._write(ENTRY_EXIT,
+                    '| Trace started',
+                    keys)
+        self._write(ENTRY_EXIT,
+                    "| Client version: {}".format(__version__),
+                    keys)
+        self._write(ENTRY_EXIT, HEADER_BANNER, keys)
 
     def _signal_handler(self, signum, frame):
         """
@@ -218,16 +249,27 @@ class MQLightLog(object):
 
     def entry(self, name, client_id):
         self._entry_level(ENTRY, name, client_id)
+        self._from_where(FROM, name, client_id)
 
     def entry_often(self, name, client_id):
         self._entry_level(ENTRY_OFTEN, name, client_id)
 
     def _entry_level(self, level, name, client_id):
         with LOCK:
-            msg = '{0} {1}'.format(ENTRY_IND[0:len(self._stack)], name)
+            msg = '{0} {1}'.format(ENTRY_IND[0:_get_depth()], name)
             keys = {'client_id': client_id}
             self._write(level, msg, keys)
-            self._stack.append(name)
+
+    def _from_where(self, level, name, client_id):
+        with LOCK:
+            curframe = inspect.currentframe()
+            if curframe:
+                calframe = inspect.getouterframes(curframe, 2)
+                lineno = calframe[3][2]
+                funcName = calframe[3][3]
+                msg = '{0}:{1}'.format(funcName, str(lineno))
+                keys = {'client_id': client_id}
+                self._write(level, msg, keys)
 
     def exit(self, name, client_id, return_code):
         self._exit_level(EXIT, name, client_id, return_code)
@@ -238,25 +280,17 @@ class MQLightLog(object):
     def _exit_level(self, level, name, client_id, return_code):
         with LOCK:
             msg = '{0} {1} rc={2}'.format(
-                EXIT_IND[0:len(self._stack) - 1], name, return_code)
+                EXIT_IND[0:_get_depth()],
+                name, self._trim(return_code))
             keys = {'client_id': client_id}
             self._write(level, msg, keys)
-            last = self._stack[len(self._stack) - 1]
-            if last == name:
-                self._stack.pop()
-            else:
-                # Due to asynchronous calls, the call stack might not be in the
-                # exact order so we try to pop the last matching call
-                if name in self._stack:
-                    self._stack.reverse()
-                    self._stack.remove(name)
-                    self._stack.reverse()
-                else:
-                    # Unable to find the entry call in the stack,
-                    # Generate an FFDC
-                    self.ffdc('MQLightLog._exit_level', 10, None, name)
 
-    def ffdc(self, name, probe_id, client_id, data):
+    def _trim(self, value):
+        if not isinstance(value, str):
+            value = str(value)
+        return (value[:300] + '...') if len(value) > 300 else value
+
+    def ffdc(self, name, probe_id, client_id, err, data=None):
         opts = {
             'title': 'First Failure Data Capture',
             'fnc': name or 'User-requested FFDC by function',
@@ -265,68 +299,125 @@ class MQLightLog(object):
             'client_id': client_id or NO_CLIENT_ID,
         }
         self._ffdc_sequence += 1
-        if not isinstance(data, str):
-            data = '{0}: {1}'.format(type(data).__name__, data)
 
-        keys = {'client_id': opts['client_id']}
-        self._write(FFDC, HEADER_BANNER, keys)
-        self._write(FFDC, 'IBM MQ Light Python Client', keys)
-        self._write(FFDC, HEADER_BANNER, keys)
-        self._write(FFDC,
-                    'Host Name:        {0}'.format(socket.gethostname()), keys)
-        self._write(FFDC,
-                    'Operating System: {0}'.format(platform.platform()), keys)
-        self._write(FFDC,
-                    'Architecture:     {0}'.format(platform.machine()), keys)
-        self._write(FFDC,
-                    'Python Version:   {0}'.format(sys.version), keys)
-        self._write(FFDC,
-                    'Python Arguments: {0}'.format(sys.argv), keys)
-        if not IS_WIN:
+        with LOCK:
+            self.multi_formatter.set_FFDC(True)
+            keys = {'client_id': opts['client_id']}
+            self._write(FFDC, HEADER_BANNER, keys)
+            self._write(FFDC, 'FFDC - IBM MQ Light Python Client', keys)
+            self._write(FFDC, HEADER_BANNER, keys)
             self._write(FFDC,
-                        'User Id:          {0}'.format(os.getuid()), keys)
+                        'Date/Time:        {0} (UTC {1})'.format(
+                            strftime('%H:%M:%S %d-%m-%y', localtime()),
+                            strftime('%H:%M:%S', gmtime())), keys)
             self._write(FFDC,
-                        'Group Id:         {0}'.format(os.getgid()), keys)
-        self._write(FFDC,
-                    'Log Level:        {0}'.format(self._level), keys)
-        self._write(FFDC,
-                    'Function:         {0}'.format(opts['fnc']), keys)
-        self._write(FFDC,
-                    'Probe Id:         {0}'.format(opts['probe_id']), keys)
-        self._write(FFDC,
-                    'FFDC Sequence:    {0}'.format(opts['ffdc_sequence']),
-                    keys)
-        self._write(FFDC, HEADER_BANNER, keys)
-        self._write(FFDC,
-                    'Data:             {0}'.format(data), keys)
-        self._write(FFDC, HEADER_BANNER, keys)
-        self._write(FFDC, 'Call Stack:', keys)
-        for call in traceback.format_stack():
-            self._write(FFDC, call.strip(), keys)
-        self._write(FFDC, HEADER_BANNER, keys)
+                        'Host Name:        {0}'.format(socket.gethostname()),
+                        keys)
+            self._write(FFDC,
+                        'Operating System: {0}'.format(platform.platform()),
+                        keys)
+            self._write(FFDC,
+                        'Architecture:     {0}'.format(platform.machine()),
+                        keys)
+            self._write(FFDC,
+                        'Client Version:   {0}'.format(__version__), keys)
+            self._write(FFDC,
+                        'Python Version:   {0}'.format(sys.version), keys)
+            self._write(FFDC,
+                        'Python Arguments: {0}'.format(sys.argv), keys)
+            if not IS_WIN:
+                self._write(FFDC,
+                            'User Id:          {0}'.format(os.getuid()), keys)
+                self._write(FFDC,
+                            'Group Id:         {0}'.format(os.getgid()), keys)
+            self._write(FFDC,
+                        'Log Level:        {0}'.format(self._level), keys)
+            self._write(FFDC,
+                        'Function:         {0}'.format(opts['fnc']), keys)
+            self._write(FFDC,
+                        'Probe Id:         {0}'.format(opts['probe_id']), keys)
+            self._write(FFDC,
+                        'FFDC Sequence:    {0}'.format(opts['ffdc_sequence']),
+                        keys)
+            self._write(FFDC,
+                        'Thread id:        {0}'.
+                        format(threading.currentThread()),
+                        keys)
+            self._write(FFDC, HEADER_BANNER, keys)
+            if isinstance(err, tuple):
+                self._write(FFDC,
+                            'Error:             {0} : {1}'.
+                            format(err[0].__name__, err[1]), keys)
+                self._write(FFDC, 'Traceback:', keys)
+                for call in traceback.format_tb(err[2]):
+                    self._write(FFDC, call.strip(), keys)
+            else:
+                self._write(FFDC, 'Error:             {0}'.format(err), keys)
+            if data is not None:
+                if not isinstance(data, str):
+                    data = '{0}: {1}'.format(type(data).__name__, data)
+                self._write(FFDC,
+                            'Data:             {0}'.format(data), keys)
+            self._write(FFDC, HEADER_BANNER, keys)
+            self._write(FFDC, 'Call Stack:', keys)
+            for call in traceback.format_stack():
+                self._write(FFDC, call.strip(), keys)
+            self._write(FFDC, HEADER_BANNER, keys)
+            self._write(FFDC, 'Active Threads:', keys)
+            for thread in threading.enumerate():
+                self._write(FFDC, thread, keys)
+            self._write(FFDC, HEADER_BANNER, keys)
+            self.multi_formatter.set_FFDC(False)
 
     def debug(self, client_id, message):
         keys = {'client_id': client_id}
         self._write(DEBUG, message, keys)
 
+    def parms_often(self, client_id, *args):
+        msg = ' '.join(['{0}'.format(self._trim(arg)) for arg in args])
+        keys = {'client_id': client_id}
+        self._write(PARMS_OFTEN, msg, keys)
+
     def parms(self, client_id, *args):
-        msg = ' '.join(['{0}'.format(arg) for arg in args])
+        msg = ' '.join(['{0}'.format(self._trim(arg)) for arg in args])
         keys = {'client_id': client_id}
         self._write(PARMS, msg, keys)
 
     def data(self, client_id, *args):
-        msg = ' '.join(['{0}'.format(arg) for arg in args])
+        msg = ' '.join(['{0}'.format(self._trim(arg)) for arg in args])
         keys = {'client_id': client_id}
         self._write(DATA, msg, keys)
 
     def state(self, name, client_id, event, *args):
         msg = 'Client state changed to "{0}" by {1} '.format(event, name)
-        msg += ' '.join(['{0}'.format(arg) for arg in args])
+        msg += ' '.join(['{0}'.format(self._trim(arg)) for arg in args])
         keys = {'client_id': client_id}
         self._write(STATE, msg, keys)
 
-    def error(self, name, client_id, err):
-        msg = 'Error {0} raised by {1}: {2} '.format(
-            type(err).__name__, name, err)
+    def error(self, name, client_id, err, exc=None):
+        if isinstance(err, str):
+            msg = '{0} by {1}'.format(err, name)
+        else:
+            msg = '{0} raised by {1}: {2} '.format(
+                type(err).__name__, name, err)
         keys = {'client_id': client_id}
         self._write(ERROR, msg, keys)
+        if exc is not None:
+            for line in traceback.extract_tb(exc):
+                self._write(ERROR, line, keys)
+
+
+class MultiFormatter(logging.Formatter):
+    def __init__(self, formatter, ffdc_formatter):
+        self.formatter = formatter
+        self.ffdc_formatter = ffdc_formatter
+        self.ffdc = False
+
+    def set_FFDC(self, ffdc):
+        self.ffdc = ffdc
+
+    def format(self, record):
+        if self.ffdc:
+            return self.ffdc_formatter.format(record)
+        else:
+            return self.formatter.format(record)

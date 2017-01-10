@@ -1,14 +1,14 @@
 """
 <copyright
 notice="lm-source-program"
-pids="5725-P60"
-years="2013,2015"
-crc="3568777996" >
+pids="5724-H72"
+years="2013,2016"
+crc="1885716349" >
 Licensed Materials - Property of IBM
 
 5725-P60
 
-(C) Copyright IBM Corp. 2013, 2015
+(C) Copyright IBM Corp. 2013, 2016
 
 US Government Users Restricted Rights - Use, duplication or
 disclosure restricted by GSA ADP Schedule Contract with
@@ -17,19 +17,24 @@ IBM Corp.
 """
 # pylint: disable=bare-except,broad-except,invalid-name,no-self-use
 # pylint: disable=too-many-public-methods,unused-argument
+import unittest
 import pytest
 import threading
-from mock import Mock
+import traceback
+import time
 import mqlight
 from mqlight.exceptions import StoppedError, RangeError, InvalidArgumentError,\
     UnsubscribedError, MQLightError
 
 
-class TestUnsubscribe(object):
+class TestUnsubscribe(unittest.TestCase):
     """
     Unit tests for client.unsubscribe()
     """
     TEST_TIMEOUT = 10.0
+
+    def func004(self, client, a ,b, c):
+        pass
 
     def test_unsubscribe_too_few_arguments(self):
         """
@@ -37,12 +42,19 @@ class TestUnsubscribe(object):
         (no arguments) causes an Error to be thrown.
         """
         # pylint: disable=no-value-for-parameter
+        test_is_done = threading.Event()
+        def started(client):
+            with pytest.raises(TypeError):
+                client.unsubscribe()
+            def stopped(client, error):
+                 test_is_done.set()
+            client.stop(on_stopped=stopped)
+        
         client = mqlight.Client(
             'amqp://host',
-            'test_unsubscribe_too_few_arguments')
-        with pytest.raises(TypeError):
-            client.unsubscribe()
-        client.stop()
+            'test_unsubscribe_too_few_arguments',on_started = started)
+        test_is_done.wait(self.TEST_TIMEOUT)
+        assert test_is_done.is_set()
 
     def test_unsubscribe_too_many_arguments(self):
         """
@@ -63,7 +75,7 @@ class TestUnsubscribe(object):
             'amqp://host',
             'test_unsubscribe_too_many_arguments',
             on_started=started)
-        func = Mock()
+        func = self.func004
         test_is_done.wait(self.TEST_TIMEOUT)
         assert test_is_done.is_set()
 
@@ -82,7 +94,7 @@ class TestUnsubscribe(object):
         """
         test_is_done = threading.Event()
 
-        def on_stopped(self):
+        def on_stopped(self, error):
             """client stop callback"""
             test_is_done.set()
 
@@ -90,24 +102,27 @@ class TestUnsubscribe(object):
             """started listener"""
             COUNTER = self.Counter(3)
 
-            def func(*args):
+            def func(c, e, t, s):
                 if COUNTER.decrementAndGet() <= 0:
                     client.stop(on_stopped=on_stopped)
 
-            def subscribed1(err, pattern, share):
+            def subscribed1(client, err, pattern, share):
                 with pytest.raises(TypeError):
                     client.unsubscribe('/foo1', 'share', {}, on_unsubscribed=7)
             client.subscribe('/foo1', 'share', on_subscribed=subscribed1)
 
-            def subscribed2(err, pattern, share):
+            def subscribed2(client, err, pattern, share):
+                assert err is None
                 client.unsubscribe('/foo2', on_unsubscribed=func)
             client.subscribe('/foo2', on_subscribed=subscribed2)
 
-            def subscribed3(err, pattern, share):
+            def subscribed3(client, err, pattern, share):
+                assert err is None
                 client.unsubscribe('/foo3', 'share', on_unsubscribed=func)
             client.subscribe('/foo3', 'share', on_subscribed=subscribed3)
 
-            def subscribed4(err, pattern, share):
+            def subscribed4(client, err, pattern, share):
+                assert err is None
                 client.unsubscribe('/foo4', 'share', {}, on_unsubscribed=func)
             client.subscribe('/foo4', 'share', on_subscribed=subscribed4)
 
@@ -127,30 +142,30 @@ class TestUnsubscribe(object):
         """
         test_is_done = threading.Event()
 
-        def on_stopped(client):
+        def on_stopped(client, error):
             """client stop callback"""
             test_is_done.set()
 
         def started(client):
             """started listener"""
-            def unsub(err, topic, share):
+            def unsub(client, err, topic, share):
                 """unsubscribe callback"""
                 assert topic == '/foo'
                 assert share is None
 
-            def sub(err, topic, share):
+            def sub(client, err, topic, share):
                 """subscribe callback"""
                 client.unsubscribe('/foo', on_unsubscribed=unsub)
             client.subscribe('/foo', on_subscribed=sub)
 
-            def unsub2(err, topic, share):
+            def unsub2(client, err, topic, share):
                 """unsubscribe callback"""
                 assert err is None
                 assert topic == '/foo2'
                 assert share == 'share'
                 client.stop(on_stopped=on_stopped)
 
-            def sub2(err, topic, share):
+            def sub2(client, err, topic, share):
                 """subscribe callback"""
                 client.unsubscribe('/foo2', 'share', on_unsubscribed=unsub2)
             client.subscribe('/foo2', 'share', on_subscribed=sub2)
@@ -168,14 +183,15 @@ class TestUnsubscribe(object):
         stopped state, throws an Error.
         """
         test_is_done = threading.Event()
-        client = mqlight.Client('amqp://host', 'test_unsubscribe_when_stopped')
 
-        def stopped(client):
-            """stopped listener"""
-            with pytest.raises(StoppedError):
-                client.unsubscribe('/foo')
-            test_is_done.set()
-        client.stop(stopped)
+        def started(client):
+            def stopped(client, error):
+                """stopped listener"""
+                with pytest.raises(StoppedError):
+                    client.unsubscribe('/foo')
+                test_is_done.set()
+            client.stop(stopped)
+        client = mqlight.Client('amqp://host', 'test_unsubscribe_when_stopped', on_started=started)
         test_is_done.wait(self.TEST_TIMEOUT)
         assert test_is_done.is_set()
 
@@ -191,7 +207,7 @@ class TestUnsubscribe(object):
             subscribe_event = threading.Event()
             client.subscribe(
                 '/bar',
-                on_subscribed=lambda _x, _y, _z: subscribe_event.set())
+                on_subscribed=lambda _w, _x, _y, _z: subscribe_event.set())
             subscribe_event.wait(2.0)
             assert subscribe_event.is_set()
             with pytest.raises(UnsubscribedError):
@@ -217,7 +233,7 @@ class TestUnsubscribe(object):
             subscribe_event = threading.Event()
             client.subscribe(
                 '/foo',
-                on_subscribed=lambda _x, _y, _z: subscribe_event.set())
+                on_subscribed=lambda _w, _x, _y, _z: subscribe_event.set())
             subscribe_event.wait(2.0)
             assert  subscribe_event.is_set()
             assert client.unsubscribe('/foo') == client
@@ -238,16 +254,16 @@ class TestUnsubscribe(object):
         """
         test_is_done = threading.Event()
         data = [
-            {'valid': False, 'pattern': ''},
-            {'valid': False, 'pattern': None},
-            {'valid': True, 'pattern': 1234},
-            {'valid': True, 'pattern': lambda *args: 'topic'},
-            {'valid': True, 'pattern': 'kittens'},
-            {'valid': True, 'pattern': '/kittens'},
-            {'valid': True, 'pattern': '+'},
-            {'valid': True, 'pattern': '#'},
-            {'valid': True, 'pattern': '/#'},
-            {'valid': True, 'pattern': '/+'}
+            {'name': 'EmptyStr',     'valid': False, 'pattern': ''},
+            {'name': 'None',         'valid': False, 'pattern': None},
+            {'name': 'Number',       'valid': False, 'pattern': 1234},
+            {'name': 'Func',         'valid': True, 'pattern': lambda *args: 'topic'},
+            {'name': 'Pat:kittens',  'valid': True, 'pattern': 'kittens'},
+            {'name': 'Pat:/kittens', 'valid': True, 'pattern': '/kittens'},
+            {'name': 'Pat:+',        'valid': True, 'pattern': '+'},
+            {'name': 'Pat:#',        'valid': True, 'pattern': '#'},
+            {'name': 'Pat:/#',       'valid': True, 'pattern': '/#'},
+            {'name': 'Pat:/+',       'valid': True, 'pattern': '/+'}
         ]
 
         def started(client):
@@ -263,8 +279,10 @@ class TestUnsubscribe(object):
                     else:
                         with pytest.raises(TypeError):
                             client.unsubscribe(test['pattern'])
+            except InvalidArgumentError:
+                pass
             except Exception as exc:
-                pytest.fail('Unexpected Exception ' + str(exc))
+                pytest.fail('Test: {0} reports unexpected Exception {1}'.format(test['name'], exc))
             finally:
                 client.stop()
                 test_is_done.set()
@@ -284,7 +302,7 @@ class TestUnsubscribe(object):
         test_is_done = threading.Event()
         data = [
             {'valid': True, 'share': 'abc'},
-            {'valid': True, 'share': 7},
+            {'valid': False, 'share': 7},
             {'valid': False, 'share': ':'},
             {'valid': False, 'share': 'a:'},
             {'valid': False, 'share': ':a'}
@@ -296,14 +314,20 @@ class TestUnsubscribe(object):
                 for test in data:
                     if test['valid']:
                         test_share = test['share']
+                        def on_unsubscribed(err, pattern, share):
+                            sub_test_is_done.set()
+                        sub_test_is_done = threading.Event()
                         client.subscribe(
                             '/foo',
                             test_share,
-                            on_subscribed=lambda share=test_share:
-                            client.unsubscribe('/foo', share))
+                            on_subscribed=lambda err=None, pattern=None, share=test_share:
+                            client.unsubscribe('/foo', share, on_unsubscribed=on_unsubscribed))
+                        sub_test_is_done.wait(self.TEST_TIMEOUT)
                     else:
                         with pytest.raises(InvalidArgumentError):
                             client.unsubscribe('/foo', test['share'])
+            except UnsubscribedError:
+                pass
             except Exception as exc:
                 pytest.fail('Unexpected Exception ' + str(exc))
             finally:
@@ -328,41 +352,44 @@ class TestUnsubscribe(object):
         individual options will be in separate tests.
         """
         test_is_done = threading.Event()
-        func = Mock()
+        func = self.func004
         data = [
-            {'valid': False, 'options': ''},
-            {'valid': True, 'options': None},
-            {'valid': False, 'options': func},
-            {'valid': False, 'options': '1'},
-            {'valid': False, 'options': 2},
-            {'valid': False, 'options': True},
-            {'valid': True, 'options': {}},
-            {'valid': True, 'options': {'a': 1}}
+            {'valid': False, 'pattern' : 'TestEmpty',    'options': ''},
+            {'valid': True,  'pattern' : 'TestNone',     'options': None},
+            {'valid': False, 'pattern' : 'TestFunc',     'options': func},
+            {'valid': False, 'pattern' : 'TestString',   'options': '1'},
+            {'valid': False, 'pattern' : 'TestNumber',   'options': 2},
+            {'valid': False, 'pattern' : 'TestBoolean',  'options': True},
+            {'valid': True,  'pattern' : 'TestEmptyList','options': {}},
+            {'valid': True,  'pattern' : 'TestList',     'options': {'a': 1}},
         ]
 
         def started(client):
             """started listener"""
             try:
-                test_pattern = 0
                 for test in data:
                     if test['valid']:
-                        test_pattern += 1
                         test_options = test['options']
+                        
+                        def on_subscribed(err,topic_pattern, share):
+                            client.unsubscribe(topic_pattern,
+                                               'share',
+                                               options=test['options'],
+                                               on_unsubscribed=func)
+                            sub_test_is_done.set()
+                            
+                        sub_test_is_done = threading.Event()
                         client.subscribe(
-                            test_pattern,
+                            test['pattern'],
                             'share',
-                            on_subscribed=lambda pattern=test_pattern, options=test_options:
-                            client.unsubscribe(
-                                pattern,
-                                'share',
-                                options,
-                                func))
+                            on_subscribed=on_subscribed)
+                        sub_test_is_done.wait(self.TEST_TIMEOUT)
                     else:
                         with pytest.raises(TypeError):
-                            client.unsubscribe('testpattern',
+                            client.unsubscribe(test['pattern'],
                                                'share',
-                                               test['options'],
-                                               func)
+                                               options=test['options'],
+                                               on_unsubscribed=func)
             except Exception as exc:
                 pytest.fail('Unexpected Exception ' + str(exc))
             finally:
@@ -372,7 +399,6 @@ class TestUnsubscribe(object):
             'amqp://host',
             'test_unsubscribe_options',
             on_started=started)
-
         test_is_done.wait(self.TEST_TIMEOUT)
         assert test_is_done.is_set()
 
@@ -383,20 +409,20 @@ class TestUnsubscribe(object):
         TypeError.
         """
         test_is_done = threading.Event()
-        func = Mock()
+        func = self.func004
         data = [
-            {'valid': False, 'ttl': None},
-            {'valid': False, 'ttl': func},
-            {'valid': False, 'ttl': -9007199254740992},
-            {'valid': False, 'ttl': float('-nan')},
-            {'valid': False, 'ttl': float('nan')},
-            {'valid': False, 'ttl': float('-inf')},
-            {'valid': False, 'ttl': float('inf')},
-            {'valid': False, 'ttl': -1},
-            {'valid': False, 'ttl': 1},
-            {'valid': False, 'ttl': 9007199254740992},
-            {'valid': True, 'ttl': 0},
-            {'valid': False, 'ttl': ''}
+            {'valid': True,  'pattern': 'TTL0',       'ttl': 0},
+            {'valid': False, 'pattern': 'TTLNone',    'ttl': None},
+            {'valid': False, 'pattern': 'TTLfunc',    'ttl': func},
+            {'valid': False, 'pattern': 'TTLNegLarge','ttl': -9007199254740992},
+            {'valid': False, 'pattern': 'TTLNegNan',  'ttl': float('-nan')},
+            {'valid': False, 'pattern': 'TTLPosNan',  'ttl': float('nan')},
+            {'valid': False, 'pattern': 'TTLNegInf',  'ttl': float('-inf')},
+            {'valid': False, 'pattern': 'TTLPosInf',  'ttl': float('inf')},
+            {'valid': False, 'pattern': 'TTLNeg1',    'ttl': -1},
+            {'valid': False, 'pattern': 'TTLPos1',    'ttl': 1},
+            {'valid': False, 'pattern': 'TTLPosLarge','ttl': 9007199254740992},
+            {'valid': False, 'pattern': 'TTLEmpty',   'ttl': ''}
         ]
 
         def started(client):
@@ -405,17 +431,26 @@ class TestUnsubscribe(object):
                 for test in data:
                     test_opts = {'ttl': test['ttl']}
                     if test['valid']:
+                        def on_subscribed(client, err, topic_pattern, share):
+                            client.unsubscribe(topic_pattern,
+                                               'share',
+                                               test_opts,
+                                               on_unsubscribed=func)
+                            sub_test_is_done.set()
+                            
+                        sub_test_is_done = threading.Event()
                         client.subscribe(
-                            'testpattern',
-                            on_subscribed=lambda opts=test_opts:
-                            client.unsubscribe(
-                                'testpattern', options=opts)
+                            test['pattern'],
+                            'share',
+                            on_subscribed=on_subscribed
                         )
+                        sub_test_is_done.wait(self.TEST_TIMEOUT)
                     else:
                         with pytest.raises(RangeError):
                             client.unsubscribe(
-                                'testpattern', options=test_opts)
+                                test['pattern'], options=test_opts)
             except Exception as exc:
+                traceback.print_exc(exc)
                 pytest.fail('Unexpected Exception ' + str(exc))
             finally:
                 client.stop()

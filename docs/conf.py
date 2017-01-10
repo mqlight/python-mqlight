@@ -1,13 +1,13 @@
 # <copyright
 # notice="lm-source-program"
 # pids="5725-P60"
-# years="2013,2014"
+# years="2013,2016"
 # crc="3568777996" >
 # Licensed Materials - Property of IBM
 #
 # 5725-P60
 #
-# (C) Copyright IBM Corp. 2013, 2014
+# (C) Copyright IBM Corp. 2013, 2016
 #
 # US Government Users Restricted Rights - Use, duplication or
 # disclosure restricted by GSA ADP Schedule Contract with
@@ -57,7 +57,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'MQ Light'
-copyright = u'2015, IBM'
+copyright = u'2015,2016 IBM'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
