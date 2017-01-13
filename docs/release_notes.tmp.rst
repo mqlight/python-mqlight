@@ -1,7 +1,7 @@
 Feedback
 --------
 
-You can help shape the product we release by trying out the beta code and
+You can help shape the product we release by trying out the code and
 leaving your `feedback
 <https://developer.ibm.com/community/groups/service/html/communityview?communityUuid=00a6a6d0-9601-44cb-a2a2-b0b26811790a>`_.
 
@@ -17,10 +17,13 @@ output that goes to stderr when you run your application.
 Release notes
 -------------
 
-9.9.999999999999
-^^^^^^^^^^^^^^^^
-- AMQPS support
+1.0.2016120100
+^^^^^^^^^^^^^^
+
+- AMQPS (TLS) support
+- Support for both Python 2 and 3
 - Various performance improvements
+- Improved compatibility
 
 1.0.2015020201b1
 ^^^^^^^^^^^^^^^^
