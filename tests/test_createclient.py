@@ -337,14 +337,14 @@ class TestCreateClient(unittest.TestCase):
         """
         test_is_done = threading.Event()
         data = [
-#            {
-#                'ssl_trust_certificate': 'BadCertificate',
-#                'ssl_verify_name': True
-#            },
-#            {
-#                'ssl_trust_certificate': 'BadCertificate',
-#                'ssl_verify_name': False
-#            },
+            {
+                'ssl_trust_certificate': 'BadCertificate',
+                'ssl_verify_name': True
+            },
+            {
+                'ssl_trust_certificate': 'BadCertificate',
+                'ssl_verify_name': False
+            },
             {
                 'ssl_trust_certificate': 'BadVerify2',
                 'ssl_verify_name': True

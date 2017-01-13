@@ -51,7 +51,7 @@ ssl arguments:
   --client-certificate  FILE
                         use the certificate contained in FILE (in PEM format)
                         to supply the identity of the client. The connection
-                        mustbe secured with SSL/TLS
+                        must be secured with SSL/TLS
   --client-key FILE     use the private key contained in FILE (in PEM format)
                         for encrypting the specified client certificate
   --client-key-passphrase PASSPHRASE
@@ -77,7 +77,7 @@ usage: send.py [-h] [-s SERVICE] [-t TOPIC] [-i CLIENT_ID]
 Send a message to a MQ Light server.
 
 positional arguments:
-  MESSAGE               message to be sent (default: None)
+  MESSAGE               message to be sent (default: ['Hello world!'])
 
 optional arguments:
   -h, --help            show this help message and exit
