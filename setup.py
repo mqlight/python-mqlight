@@ -2,13 +2,13 @@
 <copyright
 notice="lm-source-program"
 pids="5725-P60"
-years="2014,2015"
+years="2014,2016"
 crc="3568777996" >
 Licensed Materials - Property of IBM
 
 5725-P60
 
-(C) Copyright IBM Corp. 2014, 2015
+(C) Copyright IBM Corp. 2014, 2016
 
 US Government Users Restricted Rights - Use, duplication or
 disclosure restricted by GSA ADP Schedule Contract with
@@ -20,10 +20,13 @@ from setuptools import setup, find_packages, Extension
 from setuptools.command.test import test as TestCommand
 from codecs import open as codecs_open
 from os import path, environ
-from platform import system
+from platform import system, architecture
 
 if not sys.version_info[:2] >= (2, 6):
     print('ERROR: Python 2.6 or newer is required')
+    sys.exit(1)
+if system() == 'Windows' and architecture()[0] == '32bit':
+    print('ERROR: Mqlight requires 64bit Python on Windows.')
     sys.exit(1)
 
 HERE = path.abspath(path.dirname(__file__))
@@ -46,6 +49,14 @@ def get_runtime_library_dirs():
     """Return a custom rpath to write into the extension"""
     if system() == 'Linux':
         return ['$ORIGIN']
+    else:
+        return []
+
+
+def get_extra_compile_args():
+    """Return a list of extra arguments to supply at extension compile time"""
+    if system() == 'Linux':
+        return ['-Wno-address', '-Wno-unused-function']
     else:
         return []
 
@@ -104,8 +115,9 @@ setup(
         'License :: Other/Proprietary License',
         'Operating System :: OS Independent',
         'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.6',
-        'Programming Language :: Python :: 2.7'
+        'Programming Language :: Python :: 2.7',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.5',
     ],
     keywords='ibm mqlight',
     packages=find_packages(
@@ -129,6 +141,7 @@ setup(
             library_dirs=['mqlight'],
             libraries=['qpid-proton'],
             runtime_library_dirs=get_runtime_library_dirs(),
+            extra_compile_args=get_extra_compile_args(),
             extra_link_args=get_extra_link_args()),
     ],
     install_requires=[
@@ -141,7 +154,6 @@ setup(
         'pytest_pep8',
         'pytest_timeout',
         'pytest',
-        'mock',
         'pbr==1.6.0'],
     cmdclass={
         'test': PyTest}

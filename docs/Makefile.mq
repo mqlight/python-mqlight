@@ -3,7 +3,7 @@ MQCOMM %Z% %W%           %I% %E% %U%
 /*   <copyright                                                       */
 /*   notice="oco-source"                                              */
 /*   pids="5725-P60"                                                  */
-/*   years="2014"                                                     */
+/*   years="2014,2016"                                                */
 /*   crc="2536674324" >                                               */
 /*   IBM Confidential                                                 */
 /*                                                                    */
@@ -11,7 +11,7 @@ MQCOMM %Z% %W%           %I% %E% %U%
 /*                                                                    */
 /*   5725-P60                                                         */
 /*                                                                    */
-/*   (C) Copyright IBM Corp. 2014                                     */
+/*   (C) Copyright IBM Corp. 2014, 2016                               */
 /*                                                                    */
 /*   The source code for the program is not published                 */
 /*   or otherwise divested of its trade secrets,                      */
@@ -19,13 +19,9 @@ MQCOMM %Z% %W%           %I% %E% %U%
 /*   U.S. Copyright Office.                                           */
 /*   </copyright>                                                     */
 /**********************************************************************/
--include $(BROOT)/appmsging/tools/python/python-vars.mk
+-include $(OINC)/python-vars.mk
 
-#if defined(ArchitectureFamilyPc)
-PYTHON_VRMF := $(shell FixPath($(BROOT)/bin64/mqvrmf) -P)
-#else
 PYTHON_VRMF := $(shell FixPath($(BROOT)/bin/mqvrmf) -P)
-#endif
 
 /* Update the 'latest' version number in index.rst */
 ReplaceText($(SPWD)/release_notes.tmp.rst,9.9.999999999999,$(PYTHON_VRMF),$(BPWD)/release_notes.rst)

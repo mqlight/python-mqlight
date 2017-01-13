@@ -1,13 +1,13 @@
 # <copyright
 # notice="lm-source-program"
-# pids="5725-P60"
-# years="2013,2014"
-# crc="3568777996" >
+# pids="5724-H72"
+# years="2013,2016"
+# crc="3250275633" >
 # Licensed Materials - Property of IBM
 #
 # 5725-P60
 #
-# (C) Copyright IBM Corp. 2013, 2014
+# (C) Copyright IBM Corp. 2013, 2016
 #
 # US Government Users Restricted Rights - Use, duplication or
 # disclosure restricted by GSA ADP Schedule Contract with
@@ -17,18 +17,16 @@
 
 class MQLightError(Exception):
 
-    """
-    MQ Light base Error
-    """
+    # MQ Light base Error
     pass
 
 
 class InvalidArgumentError(MQLightError):
 
     """
-    This is a subtype of MQLightError defined by the MQ Light client. It is
-    considered a programming error. The underlying cause for this error are
-    the parameter values passed into a method.
+    A MQLight error indicating that a given argument is incorrect and
+    cannot be used. The underlying message will highlight which argument
+    is invalid.
     """
     pass
 
@@ -36,9 +34,9 @@ class InvalidArgumentError(MQLightError):
 class RangeError(MQLightError):
 
     """
-    This is a subtype of MQLightError defined by the MQ Light client. It is
-    considered a programming error. The underlying cause for this error are
-    the parameter values passed into a method are not within certain values.
+    A MQLight error indicating that a given argument is not within certain
+    values. The underlying message will highlight which argument is out of
+    range.
     """
     pass
 
@@ -46,20 +44,19 @@ class RangeError(MQLightError):
 class NetworkError(MQLightError):
 
     """
-    This is a subtype of MQLightError defined by the MQ Light client. It is
-    considered an operational error. NetworkError is raised if the client
-    cannot establish a network connection to the MQ Light server, or if an
-    established connection is broken.
+    A MQLight error indicating that an attempted connection or an existing
+    connection has failed. This will relate to a network issue and the client
+    will treat as recovery and attempt reconnection. The underlying message
+    will detail which server it has issue and the reason.
     """
     pass
 
 
 class NotPermittedError(MQLightError):
     """
-    This is a subtype of MQLightError defined by the MQ Light client. It is
-    considered an operational error. NotPermittedError is raised to indicate
-    that a requested operation has been rejected because the remote end does
-    not permit it.
+    A MQLight error indicates that an operation has been reject by the server
+    and is considered an operational error. The underlying message will
+    highlight the rejected operation.
     """
     pass
 
@@ -67,33 +64,20 @@ class NotPermittedError(MQLightError):
 class ReplacedError(MQLightError):
 
     """
-    This is a subtype of MQLightError defined by the MQ Light client. It is
-    considered an operational error. ReplacedError is raised to signify that an
-    instance of the client has been replaced by another instance that connected
-    specifying the exact same client id.
+    A MQLight error indicating that the server has detected two clients with
+    the same client id are connected. This is not supported and this client
+    has been disconnected.
     """
     pass
-
-
-class LocalReplacedError(ReplacedError):
-
-    """
-    Special type of ReplacedError rasied by an invalidated Client instance. An
-    invalidated Client instance is one where the application has created
-    another Client instance with the same id, which replaces it.
-    """
-
-    def __init__(self):
-        self.msg = 'Client is Invalid. Application has created a ' + \
-            'second Client instance with the same id'
 
 
 class SecurityError(MQLightError):
 
     """
-    This is a subtype of MQLightError defined by the MQ Light client. It is
-    considered an operational error. SecurityError is raised when an operation
-    fails due to a security related problem.
+    A MQLight error indicating a failure to connect to the server due to
+    a security issue. This may relate to the SASL authentication, or SSL.
+    The underlying message will detail which security issue it is and why
+    has been rejected.
     """
     pass
 
@@ -101,13 +85,8 @@ class SecurityError(MQLightError):
 class StoppedError(MQLightError):
 
     """
-    This is a subtype of MQLight Error defined by the MQ Light client. It is
-    considered a programming error - but is unusual in that, in some
-    circumstances, a client may reasonably expect to receive StoppedError as a
-    result of its actions and would typically not be altered to avoid this
-    condition occurring.  StoppedError is raised by methods which require
-    connectivity to the server (e.g. send, subscribe) when they are invoked
-    while the client is in the stopping or stopped states.
+    A MQLight error indicating a request such as Send, Subscribe and
+    Unsubscribed has been requested while the client is not in a started state.
     """
     pass
 
@@ -115,10 +94,9 @@ class StoppedError(MQLightError):
 class SubscribedError(MQLightError):
 
     """
-    This is a subtype of MQLightError defined by the MQ Light client. It is
-    considered a programming error. SubscribedError is raised from the
-    client.subscribe(...) method call when a request is made to subscribe to a
-    destination that the client is already subscribed to.
+    A MQLight error indicating that the Subscription request is a
+    duplicated subscription and is not supported. The underlying message will
+    detail the issue.
     """
     pass
 
@@ -126,9 +104,17 @@ class SubscribedError(MQLightError):
 class UnsubscribedError(MQLightError):
 
     """
-    This is a subtype of MQLightError defined by the MQ Light client. It is
-    considered a programming error. UnsubscribedError is raised from the
-    client.unsubscribe(...) method call when a request is made to unsubscribe
-    from a destination that the client is not subscribed to.
+    A MQLight error indicating that a request to unsubscribed has been
+    rejected as no current subscription can be found. The underlying message
+    will detail the issue.
+    """
+    pass
+
+
+class InternalError(MQLightError):
+    """
+    A MQLight error indicating there has been an internal issue. An internal
+    module has receive invalid, corrupt or unexcepted data. A FFDC report
+    will have been generated with additional diagnostic information.
     """
     pass
