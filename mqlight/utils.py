@@ -1,18 +1,19 @@
-# <copyright
-# notice="lm-source-program"
-# pids="5725-P60"
-# years="2013,2016"
-# crc="3568777996" >
-# Licensed Materials - Property of IBM
+
+# python-mqlight - high-level API by which you can interact with MQ Light
 #
-# 5725-P60
+# Copyright 2015-2017 IBM Corp.
 #
-# (C) Copyright IBM Corp. 2016
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-# US Government Users Restricted Rights - Use, duplication or
-# disclosure restricted by GSA ADP Schedule Contract with
-# IBM Corp.
-# </copyright>
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import sys
 from .definitions import QOS, QOS_AT_MOST_ONCE, QOS_AT_LEAST_ONCE
