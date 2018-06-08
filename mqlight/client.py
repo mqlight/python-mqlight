@@ -218,7 +218,7 @@ def _get_http_service_function(http, http_url):
                         'unparseable JSON: {2}'.format(
                             http_url.scheme, http, exc))
                     LOG.error('_http_service_function', NO_CLIENT_ID, err)
-                    callback(err)
+                    callback(err, None)
             else:
                 err = NetworkError(
                     '{0} request to {1} failed with a status code '
