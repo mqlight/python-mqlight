@@ -154,7 +154,7 @@ setup(
         'pytest_pep8',
         'pytest_timeout',
         'pytest',
-        'pbr==1.6.0'],
+        'pbr==5.4.5'],
     cmdclass={
         'test': PyTest}
 )
